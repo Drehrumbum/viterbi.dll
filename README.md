@@ -1,7 +1,7 @@
 # viterbi.dll
 viterbi.dll replacement for QIRX-SDR (Windows 64 Bit)
 
-“Need for speed” 
+“Need for speed” is not a game. ;)
 
 Preface
 
