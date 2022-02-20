@@ -28,7 +28,7 @@ If you want to compile the DLL for Windows 64-Bit by yourself, you can simply us
 
 You may ask, why I recommend you to install other compilers? The answer is short: “Need for speed” is the motto of this project and the MSVC compiler isn’t the best choice for that approach. Sorry, that’s the truth. The clang-compiler is one of the best compilers around. It’s real amazing to see what a today’s optimizing compiler does. You can use other compilers not mentioned herein, of course. But always look inside of the assembly-language listings! This is important. Don’t blame me, if your code runs slower as expected.
 
-When all of the preparation work is done, you’re ready to go. Load the project into Visual Studio and simply recompile it. There is absolutely need to change the settings. Do not link against any C-Library, please. We don’t need it. The compiler should use it’s own inbuilt solutions for memset, memcpy or similar, instead. We only need some memory directly from the system and want kick up QIRX a little bit. Kernel32.dll is our best friend and always there.
+When all of the preparation work is done, you’re ready to go. Load the project into Visual Studio and simply recompile it. There is absolutely need to change the settings. Do not link against any C-Library, please. We don’t need it. The compiler should use it’s own inbuilt solutions for memset, memcpy or similar, instead. We only need some memory directly from the system and want to kick up QIRX a little bit. Kernel32.dll is our best friend and always there.
 
 To all penguins out there: I think, you'll get the needed stuff running w/o further information. 
 
