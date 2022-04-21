@@ -3,7 +3,7 @@ viterbi.dll replacement for QIRX-SDR (Windows 64 Bit)
 
 *“Need for speed” is not a game. ;)*
 
-##Important note:
+## Important note:
 
 Due to an error in the Reed-Solomon decoder, the audio-signal in QIRX was lost earlier under poor receiving conditions, compared to other DAB-SDR programs facing the same conditions. The reason for that behavior was my assumption that some variables within the RS-Decoder can be of type “unsigned”. While strolling through the code, I’ve found another little bug which was responsible for negative values appearing at the QIRX “Audio (ok %)” display. Please update to the latest version of viterbi.dll. You can find several versions inside of the zip-archive on the right side of this page. The zip-archive now contains a AVX2 version of the viterbi.dll, too. This version runs slightly faster than the normal AVX version at CPUs which support this instruction-set, of course.
 
