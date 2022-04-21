@@ -80,9 +80,8 @@ static inline int DECODE_RS(unsigned char* rsBlock){
  __declspec(align (16)) unsigned char root[16];
  __declspec(align (16)) unsigned char loc[16];
  __declspec(align (16)) unsigned char omega[16];
- unsigned int q, tmp, num1, num2, den, discr_r, deg_lambda, el,
-     deg_omega, i, j, r, k;
-int syn_error, count;
+unsigned char q, tmp, num1, num2, den, discr_r;
+int deg_lambda, el, deg_omega, i, j, r, k, syn_error, count;
 unsigned char *index_of, *alpha_to;
     index_of = RSLU->RS_iof;
     alpha_to = RSLU->RS_ato;
@@ -311,7 +310,7 @@ static inline int rs_decode(unsigned char* rsBlock, unsigned char* rsIn,
 int __cdecl RScheckSuperframe(unsigned char* p, int startIx,
     unsigned int RSDims, unsigned char* outVector)
 {
-	UNREFERENCED_PARAMETER(startIx); // not needed, it's always zero 
+    UNREFERENCED_PARAMETER(startIx); // not needed, it's always zero 
 
 __declspec(align (64)) unsigned char rsBlock[256];
 __declspec(align (64)) unsigned char rsIn[128];
@@ -319,23 +318,26 @@ __declspec(align (64)) unsigned char rsOut[128];
  
     unsigned int j, k;
     int result, errors = 0;
-	
-	for (j = 0; j < RSDims; j++) {
+    
+    for (j = 0; j < RSDims; j++) {
 
         for (k = 0; k < 120; k++)
-			rsIn[k] = p[(j + k * RSDims) % (RSDims * 120)];
+            rsIn[k] = p[(j + k * RSDims) % (RSDims * 120)];
 
-		result = rs_decode(rsBlock, rsIn, rsOut);
-
-		if (result != -1) {
-			errors += result;
-		
-			for (k = 0; k < 110; k++)
-				outVector[j + k * RSDims] = rsOut[k];
-		}
-		else
-			errors = -1;
+        result = rs_decode(rsBlock, rsIn, rsOut);
+        
+        if (result != -1) {
+            errors += result;
+     
+            for (k = 0; k < 110; k++)
+                outVector[j + k * RSDims] = rsOut[k];
+        }
+        else {
+            errors = -1;
+            goto out;
+        }
     }
-	return errors;
+out:
+    return errors;
 }
 
