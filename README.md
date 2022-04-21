@@ -3,6 +3,19 @@ viterbi.dll replacement for QIRX-SDR (Windows 64 Bit)
 
 *“Need for speed” is not a game. ;)*
 
+##Important note:
+
+Due to an error in the Reed-Solomon decoder, the audio-signal in QIRX was lost earlier under poor receiving conditions, compared to other DAB-SDR programs facing the same conditions. The reason for that behavior was my assumption that some variables within the RS-Decoder can be of type “unsigned”. While strolling through the code, I’ve found another little bug which was responsible for negative values appearing at the QIRX “Audio (ok %)” display. Please update to the latest version of viterbi.dll. You can find several versions inside of the zip-archive on the right side of this page. The zip-archive now contains a AVX2 version of the viterbi.dll, too. This version runs slightly faster than the normal AVX version at CPUs which support this instruction-set, of course.
+
+Thanks to “Old-dab” (https://github.com/old-dab/) for pointing me to the problem and the presenting of some “bad” IQ-recordings, which helped me to fix the problem.
+
+To get rid of the problem, it was necessary to see whats going on under the hood in viterbi.dll. There are only some POI (Points of Interest) inside of the code, but writing tons of logfiles, full of timestamps and snapshots, is senseless. It’s not “live” and nobody can say whats happened with QIRX (audio on or off) at a given time, later. So I ended up with a little dialog-window, which appears on top of the screen when the DLL was loaded by QIRX. I called the whole stuff "playground". The dialog showes some diagnostic data (return-values, the content of some variables) from inside of the viterbi.dll. Furthermore, the speed of the viterbi-decoder will be measured. For your own pleasure, you can find the current state of this dll inside of the "playground"-folder. The "playground"-sources are coming soon. 
+
+
+
+
+
+
 ## Preface
 viterbi.dll is one of the workhorses of QIRX and is responsible for Viterbi- and Reed-Solomon decoding/ error correction. The two exported functions will be called lots of times per second. They should execute as fast as possible.
 
