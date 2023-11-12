@@ -1,30 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|x64">
-      <Configuration>Debug</Configuration>
+    <ProjectConfiguration Include="Rel_asm|x64">
+      <Configuration>Rel_asm</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|x64">
-      <Configuration>Release</Configuration>
+    <ProjectConfiguration Include="Rel_cpp|x64">
+      <Configuration>Rel_cpp</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{e7186f32-eafa-4bc8-bd90-ed43822b222e}</ProjectGuid>
-    <RootNamespace>viterbi</RootNamespace>
+    <ProjectGuid>{4FD3AFA9-EABF-45E2-9A9B-668A851EF6BF}</ProjectGuid>
+    <RootNamespace>$safeprojectname$</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>ClangCL</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>ClangCL</PlatformToolset>
@@ -32,52 +26,55 @@
     <CharacterSet>NotSet</CharacterSet>
     <PreferredToolArchitecture>x64</PreferredToolArchitecture>
     <InterproceduralOptimization>true</InterproceduralOptimization>
+    <BasePlatformToolset>ClangCL</BasePlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Rel_asm|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>ClangCL</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>NotSet</CharacterSet>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+    <InterproceduralOptimization>true</InterproceduralOptimization>
+    <VCToolsVersion>
+    </VCToolsVersion>
+    <BasePlatformToolset>ClangCL</BasePlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Rel_asm|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LinkIncremental>false</LinkIncremental>
-    <GenerateManifest>false</GenerateManifest>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">
     <LinkIncremental>false</LinkIncremental>
     <GenerateManifest>false</GenerateManifest>
     <CopyLocalDeploymentContent>true</CopyLocalDeploymentContent>
+    <EmbedManifest>false</EmbedManifest>
+    <IgnoreImportLibrary>true</IgnoreImportLibrary>
+    <OutDir>.\final\</OutDir>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;VITERBI_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PrecompiledHeaderFile>
-      </PrecompiledHeaderFile>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-    </ClCompile>
-    <Link>
-      <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <EnableUAC>false</EnableUAC>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Rel_asm|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <GenerateManifest>false</GenerateManifest>
+    <CopyLocalDeploymentContent>true</CopyLocalDeploymentContent>
+    <EmbedManifest>false</EmbedManifest>
+    <IgnoreImportLibrary>true</IgnoreImportLibrary>
+    <OutDir>.\final\</OutDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;VITERBI_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;VITERBI_EXPORTS;_WINDOWS;_USRDLL;_VIT_NO_ASM_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
@@ -92,22 +89,28 @@
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <DebugInformationFormat>None</DebugInformationFormat>
       <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
-      <AdditionalOptions>-Rpass-analysis=loop-vectorize -Rpass=loop-vectorize -Rpass-missed=loop-vectorize -masm=intel %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/Gs100000 %(AdditionalOptions)</AdditionalOptions>
       <UseMSVC>false</UseMSVC>
       <OptimizationDiagnosticLevel>Level1</OptimizationDiagnosticLevel>
       <StringPooling>true</StringPooling>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <CCppSupport>Cpp17Support</CCppSupport>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AssemblerOutput>AssemblyCode</AssemblerOutput>
-      <InterproceduralOptimization>NoIPO</InterproceduralOptimization>
+      <AssemblerOutput>AssemblyAndMachineCode</AssemblerOutput>
+      <InterproceduralOptimization>MultiFile</InterproceduralOptimization>
       <GuardEHContMetadata>false</GuardEHContMetadata>
       <OptimizeForWindowsApplication>true</OptimizeForWindowsApplication>
-      <UseProcessorExtensions>AVX</UseProcessorExtensions>
+      <UseProcessorExtensions>None</UseProcessorExtensions>
+      <OmitDefaultLibName>true</OmitDefaultLibName>
+      <Optimization>MaxSpeed</Optimization>
+      <OmitFramePointers>true</OmitFramePointers>
+      <StructMemberAlignment>16Bytes</StructMemberAlignment>
+      <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <EnableCOMDATFolding>
+      </EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
@@ -117,18 +120,155 @@
       <EntryPointSymbol>DllMain</EntryPointSymbol>
       <TargetMachine>MachineX64</TargetMachine>
       <WPOAssemblyOutput>Asm_and_Source</WPOAssemblyOutput>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <MinimumRequiredVersion>
+      </MinimumRequiredVersion>
+      <Driver />
+      <ImageHasSafeExceptionHandlers>
+      </ImageHasSafeExceptionHandlers>
+      <MergeSections>
+      </MergeSections>
+      <AdditionalOptions>/NOIMPLIB %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <MASM>
+      <GeneratePreprocessedSourceListing>false</GeneratePreprocessedSourceListing>
+      <EnableFalseConditionalsInListing>true</EnableFalseConditionalsInListing>
+      <ListAllAvailableInformation>false</ListAllAvailableInformation>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AddFirstPassListing>false</AddFirstPassListing>
+      <EnableAssemblyGeneratedCodeListing>true</EnableAssemblyGeneratedCodeListing>
+      <AssembledCodeListingFile>$(IntDir)%(FileName).lst</AssembledCodeListingFile>
+      <ErrorReporting>3</ErrorReporting>
+    </MASM>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Rel_asm|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;VITERBI_EXPORTS;_WINDOWS;_USRDLL;Rel_asm;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <ExceptionHandling>false</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <AdditionalOptions>/Gs100000 %(AdditionalOptions)</AdditionalOptions>
+      <UseMSVC>false</UseMSVC>
+      <OptimizationDiagnosticLevel>Level1</OptimizationDiagnosticLevel>
+      <StringPooling>true</StringPooling>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <CCppSupport>Cpp17Support</CCppSupport>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <AssemblerOutput>All</AssemblerOutput>
+      <InterproceduralOptimization>MultiFile</InterproceduralOptimization>
+      <GuardEHContMetadata>false</GuardEHContMetadata>
+      <OptimizeForWindowsApplication>true</OptimizeForWindowsApplication>
+      <UseProcessorExtensions>None</UseProcessorExtensions>
+      <OmitDefaultLibName>true</OmitDefaultLibName>
+      <Optimization>MaxSpeed</Optimization>
+      <OmitFramePointers>true</OmitFramePointers>
+      <StructMemberAlignment>16Bytes</StructMemberAlignment>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>
+      </EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+      <ModuleDefinitionFile>viterbi.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
+      <EntryPointSymbol>DllMain</EntryPointSymbol>
+      <TargetMachine>MachineX64</TargetMachine>
+      <WPOAssemblyOutput>Asm_and_Source</WPOAssemblyOutput>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <MinimumRequiredVersion>
+      </MinimumRequiredVersion>
+      <Driver>
+      </Driver>
+      <ImageHasSafeExceptionHandlers>
+      </ImageHasSafeExceptionHandlers>
+      <MergeSections>
+      </MergeSections>
+      <AdditionalOptions>/NOIMPLIB %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+    <MASM>
+      <GeneratePreprocessedSourceListing>false</GeneratePreprocessedSourceListing>
+      <EnableFalseConditionalsInListing>true</EnableFalseConditionalsInListing>
+      <ListAllAvailableInformation>false</ListAllAvailableInformation>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AddFirstPassListing>false</AddFirstPassListing>
+      <EnableAssemblyGeneratedCodeListing>true</EnableAssemblyGeneratedCodeListing>
+      <AssembledCodeListingFile>$(IntDir)%(FileName).lst</AssembledCodeListingFile>
+      <ErrorReporting>3</ErrorReporting>
+    </MASM>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <CustomBuildStep>
+      <RootFolder>
+      </RootFolder>
+    </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="branchtable.h" />
+    <ClInclude Include="getcpucaps.h" />
+    <ClInclude Include="inifiletext.h" />
     <ClInclude Include="viterbi.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="deconvolve.cpp" />
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="double2str.cpp" />
     <ClCompile Include="rschecksf.cpp" />
+    <ClCompile Include="setupdll.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="const.asm" />
+    <MASM Include="decon_avx.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">true</ExcludedFromBuild>
+    </MASM>
+    <MASM Include="decon_avx2.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">true</ExcludedFromBuild>
+    </MASM>
+    <MASM Include="decon_avx5.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_asm|x64'">true</ExcludedFromBuild>
+    </MASM>
+    <MASM Include="decon_sse2_lut32.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">true</ExcludedFromBuild>
+    </MASM>
+    <MASM Include="decon_sse41.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_asm|x64'">true</ExcludedFromBuild>
+    </MASM>
+    <MASM Include="decon_ssse3.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Rel_cpp|x64'">true</ExcludedFromBuild>
+    </MASM>
+    <MASM Include="viterbi_helpers.asm" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="chainback.inc" />
+    <None Include="const.inc" />
+    <None Include="sehmac.inc" />
+    <None Include="viterbi.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
   </ImportGroup>
 </Project>
