@@ -1,5 +1,23 @@
 LIBRARY viterbi
 EXPORTS
-	RScheckSuperframe
-	deconvolve
-	initialize
+; --
+     deconvolve
+     initialize
+     RScheckSuperframe
+     GetCPUCaps
+     WakeUpYMM
+     TouchStack
+
+; -- direct exports only for testing
+; -- SSE2 --
+;     decon_sse2_lut32
+; -- SSSE3
+;     decon_ssse3
+; -- SSE41
+;     decon_sse41
+; -- AVX --	
+;     decon_avx
+; -- AVX2 --
+;     decon_avx2
+; -- AVX512 --
+;     decon_avx5

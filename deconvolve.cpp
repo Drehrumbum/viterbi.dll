@@ -2,7 +2,8 @@
 * This file is part of
 *
 * viterbi.dll replacement for QIRX-SDR (Windows 64 Bit)
-*
+* 
+* 
 * This program is free software; you can redistribute it and/or modify it
 * under the terms of the GNU General Public License as published by the Free
 * Software Foundation; either version 2 of the License, or (at your option)
@@ -15,550 +16,630 @@
 *
 * You should have received a copy of the GNU General Public License along with
 * this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-* Place - Suite 330, Boston, MA 02111-1307, USA
-* and it is distributed under the GNU General Public License (GPL).
+* Place - Suite 330, Boston, MA 02111-1307, USA and it is distributed under the
+* GNU General Public License (GPL).
 *
-* (c) 2021-2022 by Heiko Vogel <hevog@gmx.de>
 *
+* Original DLL-version for QIRX (c) 2018 by Clem Schmidt
+* (https://qirx.softsyst.com). The sources of this DLL can be found at Clem's
+* website within the download-section, more likely inside of a Linux-package.
 * 
-* 
-* The "Spiral-Code" is the "workhorse" of this DLL and should run as fast as
-* possible. The "Need for speed" motto, you know. ;) It's absolutely important
-* to chose the right compiler and settings. Then you will see some kind of
-* "today's compiler-magic", if you take a look into the assembly-language
-* listing the compiler writes for you. And you should look into it.
-* 
-* If you use the SSE or AVX instruction-sets, your compiler MUST USE all of
-* the 16 XMM-registers available. Otherwise your code will be very slow - no
-* chance to win only an flowerpot with it.
+* Original sceen-play (c) 2001++ by Phil Karn, KA9Q. Mr. Karn's software for
+* Viterbi- and Reed-Solomon decoding can be found at
+* http://www.ka9q.net/code/fec/ or at Github. It may be used under the terms
+* of the GNU Lesser General Public License (LGPL).
 *
-* Because the contents of our little "BranchTable" is known at compile-time,
-* the compiler loads (and keeps) the needed values in XMM-registers at
-* function-entry to avoid further access within the main-loop, if possible. 
-* Well, there's a lot of "register-pressure" with SSE or AVX, so two reads 
-* per round from our table are still necessary.
-* 
-* By using the AVX512 instruction-set, the compiler is able to generate code
-* that holds much more data inside of the CPU. The clang-compiler, for 
-* instance, uses the registers XMM0 - XMM5 (always scratch) and XMM16 - XMM26
-* (no need to save and restore them) for this purpose. The Intel-compiler does
-* almost the same.
 *
-* Please note: The current "spiral-code" is not the best solution for AVX
-* and AVX512, because the full bit-width of the registers is not used for 
-* calculations.
+*
+* Here you will find all the macros necessary to create the DLL with the
+* C-intrinsics and the skeleton for the multi-versioning of the function
+* 'deconvolve'. Switch to 'Rel_cpp' in the 'Solution Configuration' drop-down
+* list to enable the code below. It may be necessary to rearrange the
+* intrinsics or introduce dummy variables so that the compiler can optimizing
+* better. With the 128-bit decoders, the compiler is under high register-
+* pressure because all constants and metrics should be kept in the registers,
+* but only 16 SIMD registers are available. For example, pay attention to
+* whether the compiler generates code to load one or two constants from memory
+* within the main loop. This is most likely not what you want. 
+* It's a playground - have fun.
+* 
+* (c) 2021-23 Heiko Vogel <hevog@gmx.de>
+* 
 */
+
+
+// The project is compiled for SSE2, but we need some more inrinsincs
+// for multiversioning.
+#define __SSSE3__
+#define __SSE4_1__
+#define __AVX__
+#define __AVX2__
+
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <intrin.h>
-#include <emmintrin.h>
-
 #include "viterbi.h"
-#include "branchtable.h"
 
-extern decision_t * desis;
 
-
-int __cdecl deconvolve(unsigned int framebits,  
-
-#ifdef VITERBI_INPUT_UINT	
-	unsigned int*  pDataSource,
-#else
-	unsigned char* pDataSource,
-#endif
-
-	int inputLength, unsigned char* output)
-{
-	UNREFERENCED_PARAMETER(inputLength);
-
-__declspec(align (64)) COMPUTETYPE OldMet[NUMSTATES];
-__declspec(align (64)) COMPUTETYPE NewMet[NUMSTATES];
-
-// init old metric 
-	memset(OldMet, 63, sizeof(OldMet));
-	OldMet[0] = 0;
-
-	decision_t *desicions = desis;
-
-	unsigned int SpiralLoops = framebits / 2 + 2;
-/*
-* Trying to fetch the first 64 bytes from the input-buffer into the cache.
-* Unfortunately, QIRX's buffers are not well aligned (8 bytes) and not fixed
-* in memory, so a input-buffer may sometimes start only eight bytes away from
-* the end of a cache-line and we'll get absolutely no "Need for speed"-points
-* for our prefetch-hint.
-*/
-	_mm_prefetch((const char*)pDataSource, _MM_HINT_T0);
-
-
-
-// "Spiral-Code" goes here. Run Fury, run!!! ;)
-
-	for (unsigned long long i9 = 0; i9 <= SpiralLoops; i9++) {
-
-#ifdef VITERBI_INPUT_UINT
-		unsigned int a139, a149, a159, a169, a365, a375, a385, a396;
-		unsigned int *a138, *a148, *a158, *a168, *b14, *a364, 
-			*a374, *a384, *a395, *b35;
-#else
-		unsigned char a139, a149, a159, a169, a365, a375, a385, a396;
-		unsigned char *a138, *a148, *a158, *a168, *b14, *a364,
-			*a374, *a384, *a395, *b35;
-#endif // VITERBI_INPUT_UINT
-
-		unsigned long long a137;
-		short int  s20, s21, s26, s27;
-
-		short int* a183, * a184, * a185, * a223, * a224;
-		__m128i* a135, * a136, * a141, * a151, * a161, * a171, * a186
-			, * a187, * a188, * a189, * a190, * a197, * a204, * a211, * a225
-			, * a226;
-		__m128i a144, a145, a154, a155, a164, a165, a174
-			, a175, a178, a179, a193, a194, a200, a201, a207
-			, a208, a214, a215, a218, a219;
-		__m128i a140, a142, a143, a146, a147, a150, a152
-			, a153, a156, a157, a160, a162, a163, a166, a167
-			, a170, a172, a173, a176, a177, a180, a181, a182
-			, a191, a192, a195, a196, a198, a199, a202, a203
-			, a205, a206, a209, a210, a212, a213, a216, a217
-			, a220, a221, a222, b15, b16, b17, b18, d10
-			, d11, d12, d9, m23, m24, m25, m26, m27
-			, m28, m29, m30, s18, s19, s22, s23, s24
-			, s25, s28, s29, t13, t14, t15, t16, t17
-			, t18;
-		a135 = ((__m128i*) OldMet);
-		s18 = *(a135);
-		a136 = (a135 + 2);
-		s19 = *(a136);
-		a137 = (8 * i9);
-		a138 = (pDataSource + a137);
-		a139 = *(a138);
-		a140 = _mm_set1_epi8(a139);
-		a141 = ((__m128i*) BranchTable);
-		a142 = *(a141);
-		a143 = _mm_xor_si128(a140, a142);
-		a144 = ((__m128i) a143);
-		a145 = _mm_srli_epi16(a144, 2);
-		a146 = ((__m128i) a145);
-
-		a147 = _mm_and_si128(a146, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		b14 = (a137 + pDataSource);
-		a148 = (b14 + 1);
-		a149 = *(a148);
-		a150 = _mm_set1_epi8(a149);
-		a151 = (a141 + 2);
-		a152 = *(a151);
-		a153 = _mm_xor_si128(a150, a152);
-		a154 = ((__m128i) a153);
-		a155 = _mm_srli_epi16(a154, 2);
-		a156 = ((__m128i) a155);
-
-		a157 = _mm_and_si128(a156, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a158 = (b14 + 2);
-		a159 = *(a158);
-		a160 = _mm_set1_epi8(a159);
-		a161 = (a141 + 4);
-		a162 = *(a161);
-		a163 = _mm_xor_si128(a160, a162);
-		a164 = ((__m128i) a163);
-		a165 = _mm_srli_epi16(a164, 2);
-		a166 = ((__m128i) a165);
-
-		a167 = _mm_and_si128(a166, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a168 = (b14 + 3);
-		a169 = *(a168);
-		a170 = _mm_set1_epi8(a169);
-		a171 = (a141 + 6);
-		a172 = *(a171);
-		a173 = _mm_xor_si128(a170, a172);
-		a174 = ((__m128i) a173);
-		a175 = _mm_srli_epi16(a174, 2);
-		a176 = ((__m128i) a175);
-
-		a177 = _mm_and_si128(a176, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		b15 = _mm_adds_epu8(a147, a157);
-		b16 = _mm_adds_epu8(b15, a167);
-		t13 = _mm_adds_epu8(b16, a177);
-		a178 = ((__m128i) t13);
-		a179 = _mm_srli_epi16(a178, 2);
-		a180 = ((__m128i) a179);
-
-		t14 = _mm_and_si128(a180, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-		t15 = _mm_subs_epu8(_mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63), t14);
-
-		m23 = _mm_adds_epu8(s18, t14);
-		m24 = _mm_adds_epu8(s19, t15);
-		m25 = _mm_adds_epu8(s18, t15);
-		m26 = _mm_adds_epu8(s19, t14);
-		a181 = _mm_min_epu8(m24, m23);
-		d9 = _mm_cmpeq_epi8(a181, m24);
-		a182 = _mm_min_epu8(m26, m25);
-		d10 = _mm_cmpeq_epi8(a182, m26);
-		s20 = _mm_movemask_epi8(_mm_unpacklo_epi8(d9, d10));
-		a183 = ((short int*)desicions);
-		a184 = (a183 + a137);
-		*(a184) = s20;
-		s21 = _mm_movemask_epi8(_mm_unpackhi_epi8(d9, d10));
-		a185 = (a184 + 1);
-		*(a185) = s21;
-		s22 = _mm_unpacklo_epi8(a181, a182);
-		s23 = _mm_unpackhi_epi8(a181, a182);
-		a186 = ((__m128i*) NewMet);
-		*(a186) = s22;
-		a187 = (a186 + 1);
-		*(a187) = s23;
-		a188 = (a135 + 1);
-		s24 = *(a188);
-		a189 = (a135 + 3);
-		s25 = *(a189);
-		a190 = (a141 + 1);
-		a191 = *(a190);
-		a192 = _mm_xor_si128(a140, a191);
-		a193 = ((__m128i) a192);
-		a194 = _mm_srli_epi16(a193, 2);
-		a195 = ((__m128i) a194);
-
-		a196 = _mm_and_si128(a195, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a197 = (a141 + 3);
-		a198 = *(a197);
-		a199 = _mm_xor_si128(a150, a198);
-		a200 = ((__m128i) a199);
-		a201 = _mm_srli_epi16(a200, 2);
-		a202 = ((__m128i) a201);
-
-		a203 = _mm_and_si128(a202, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a204 = (a141 + 5);
-		a205 = *(a204);
-		a206 = _mm_xor_si128(a160, a205);
-		a207 = ((__m128i) a206);
-		a208 = _mm_srli_epi16(a207, 2);
-		a209 = ((__m128i) a208);
-
-		a210 = _mm_and_si128(a209, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a211 = (a141 + 7);
-		a212 = *(a211);
-		a213 = _mm_xor_si128(a170, a212);
-		a214 = ((__m128i) a213);
-		a215 = _mm_srli_epi16(a214, 2);
-		a216 = ((__m128i) a215);
-
-		a217 = _mm_and_si128(a216, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		b17 = _mm_adds_epu8(a196, a203);
-		b18 = _mm_adds_epu8(b17, a210);
-		t16 = _mm_adds_epu8(b18, a217);
-		a218 = ((__m128i) t16);
-		a219 = _mm_srli_epi16(a218, 2);
-		a220 = ((__m128i) a219);
-
-		t17 = _mm_and_si128(a220, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-		t18 = _mm_subs_epu8(_mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63), t17);
-
-		m27 = _mm_adds_epu8(s24, t17);
-		m28 = _mm_adds_epu8(s25, t18);
-		m29 = _mm_adds_epu8(s24, t18);
-		m30 = _mm_adds_epu8(s25, t17);
-		a221 = _mm_min_epu8(m28, m27);
-		d11 = _mm_cmpeq_epi8(a221, m28);
-		a222 = _mm_min_epu8(m30, m29);
-		d12 = _mm_cmpeq_epi8(a222, m30);
-		s26 = _mm_movemask_epi8(_mm_unpacklo_epi8(d11, d12));
-		a223 = (a184 + 2);
-		*(a223) = s26;
-		s27 = _mm_movemask_epi8(_mm_unpackhi_epi8(d11, d12));
-		a224 = (a184 + 3);
-		*(a224) = s27;
-		s28 = _mm_unpacklo_epi8(a221, a222);
-		s29 = _mm_unpackhi_epi8(a221, a222);
-		a225 = (a186 + 2);
-		*(a225) = s28;
-		a226 = (a186 + 3);
-		*(a226) = s29;
-
-		if ((((unsigned char*)NewMet)[0] > RENORMALIZE_THRESHOLD)) {
-			__m128i m5, m6;
-			m5 = ((__m128i*) NewMet)[0];
-			m5 = _mm_min_epu8(m5, ((__m128i*)  NewMet)[1]);
-			m5 = _mm_min_epu8(m5, ((__m128i*)  NewMet)[2]);
-			m5 = _mm_min_epu8(m5, ((__m128i*)  NewMet)[3]);
-			__m128i m7;
-			m7 = _mm_min_epu8(_mm_srli_si128(m5, 8), m5);
-			m7 = ((__m128i) _mm_min_epu8(((__m128i) _mm_srli_epi64(m7, 32)), ((__m128i) m7)));
-			m7 = ((__m128i) _mm_min_epu8(((__m128i) _mm_srli_epi64(m7, 16)), ((__m128i) m7)));
-			m7 = ((__m128i) _mm_min_epu8(((__m128i) _mm_srli_epi64(m7, 8)), ((__m128i) m7)));
-			m7 = _mm_unpacklo_epi8(m7, m7);
-			m7 = _mm_shufflelo_epi16(m7, _MM_SHUFFLE(0, 0, 0, 0));
-			m6 = _mm_unpacklo_epi64(m7, m7);
-			((__m128i*)  NewMet)[0] = _mm_subs_epu8(((__m128i*)  NewMet)[0], m6);
-			((__m128i*)  NewMet)[1] = _mm_subs_epu8(((__m128i*)  NewMet)[1], m6);
-			((__m128i*)  NewMet)[2] = _mm_subs_epu8(((__m128i*)  NewMet)[2], m6);
-			((__m128i*)  NewMet)[3] = _mm_subs_epu8(((__m128i*)  NewMet)[3], m6);
-		}
-
-
-		unsigned long long a363;
-		short int s48, s49, s54, s55;
-		short int* a410, * a411, * a412, * a450, * a451, * b38;
-		__m128i* a361, * a362, * a367, * a377, * a388, * a398, * a413
-			, * a414, * a415, * a416, * a417, * a424, * a431, * a438, * a452
-			, * a453;
-		__m128i a370, a371, a380, a381, a391, a392, a401
-			, a402, a405, a406, a420, a421, a427, a428, a434
-			, a435, a441, a442, a445, a446;
-		__m128i a366, a368, a369, a372, a373, a376, a378
-			, a379, a382, a383, a387, a389, a390, a393, a394
-			, a397, a399, a400, a403, a404, a407, a408, a409
-			, a418, a419, a422, a423, a425, a426, a429, a430
-			, a432, a433, a436, a437, a439, a440, a443, a444
-			, a447, a448, a449, b36, b37, b39, b40, d17
-			, d18, d19, d20, m39, m40, m41, m42, m43
-			, m44, m45, m46, s46, s47, s50, s51, s52
-			, s53, s56, s57, t25, t26, t27, t28, t29
-			, t30;
-		a361 = ((__m128i*)  NewMet);
-		s46 = *(a361);
-		a362 = (a361 + 2);
-		s47 = *(a362);
-		a363 = (8 * i9);
-		b35 = (a363 + pDataSource);
-		a364 = (b35 + 4);
-		a365 = *(a364);
-		a366 = _mm_set1_epi8(a365);
-		a367 = ((__m128i*) BranchTable);
-		a368 = *(a367);
-		a369 = _mm_xor_si128(a366, a368);
-		a370 = ((__m128i) a369);
-		a371 = _mm_srli_epi16(a370, 2);
-		a372 = ((__m128i) a371);
-
-		a373 = _mm_and_si128(a372, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a374 = (b35 + 5);
-		a375 = *(a374);
-		a376 = _mm_set1_epi8(a375);
-		a377 = (a367 + 2);
-		a378 = *(a377);
-		a379 = _mm_xor_si128(a376, a378);
-		a380 = ((__m128i) a379);
-		a381 = _mm_srli_epi16(a380, 2);
-		a382 = ((__m128i) a381);
-
-		a383 = _mm_and_si128(a382, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a384 = (b35 + 6);
-		a385 = *(a384);
-		a387 = _mm_set1_epi8(a385);
-		a388 = (a367 + 4);
-		a389 = *(a388);
-		a390 = _mm_xor_si128(a387, a389);
-		a391 = ((__m128i) a390);
-		a392 = _mm_srli_epi16(a391, 2);
-		a393 = ((__m128i) a392);
-
-		a394 = _mm_and_si128(a393, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a395 = (b35 + 7);
-		a396 = *(a395);
-		a397 = _mm_set1_epi8(a396);
-		a398 = (a367 + 6);
-		a399 = *(a398);
-		a400 = _mm_xor_si128(a397, a399);
-		a401 = ((__m128i) a400);
-		a402 = _mm_srli_epi16(a401, 2);
-		a403 = ((__m128i) a402);
-
-		a404 = _mm_and_si128(a403, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		b36 = _mm_adds_epu8(a373, a383);
-		b37 = _mm_adds_epu8(b36, a394);
-		t25 = _mm_adds_epu8(b37, a404);
-		a405 = ((__m128i) t25);
-		a406 = _mm_srli_epi16(a405, 2);
-		a407 = ((__m128i) a406);
-
-		t26 = _mm_and_si128(a407, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-		t27 = _mm_subs_epu8(_mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63), t26);
-
-		m39 = _mm_adds_epu8(s46, t26);
-		m40 = _mm_adds_epu8(s47, t27);
-		m41 = _mm_adds_epu8(s46, t27);
-		m42 = _mm_adds_epu8(s47, t26);
-		a408 = _mm_min_epu8(m40, m39);
-		d17 = _mm_cmpeq_epi8(a408, m40);
-		a409 = _mm_min_epu8(m42, m41);
-		d18 = _mm_cmpeq_epi8(a409, m42);
-		s48 = _mm_movemask_epi8(_mm_unpacklo_epi8(d17, d18));
-		a410 = ((short int*)desicions);
-		b38 = (a410 + a363);
-		a411 = (b38 + 4);
-		*(a411) = s48;
-		s49 = _mm_movemask_epi8(_mm_unpackhi_epi8(d17, d18));
-		a412 = (b38 + 5);
-		*(a412) = s49;
-		s50 = _mm_unpacklo_epi8(a408, a409);
-		s51 = _mm_unpackhi_epi8(a408, a409);
-		a413 = ((__m128i*)  OldMet);
-		*(a413) = s50;
-		a414 = (a413 + 1);
-		*(a414) = s51;
-		a415 = (a361 + 1);
-		s52 = *(a415);
-		a416 = (a361 + 3);
-		s53 = *(a416);
-		a417 = (a367 + 1);
-		a418 = *(a417);
-		a419 = _mm_xor_si128(a366, a418);
-		a420 = ((__m128i) a419);
-		a421 = _mm_srli_epi16(a420, 2);
-		a422 = ((__m128i) a421);
-
-		a423 = _mm_and_si128(a422, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a424 = (a367 + 3);
-		a425 = *(a424);
-		a426 = _mm_xor_si128(a376, a425);
-		a427 = ((__m128i) a426);
-		a428 = _mm_srli_epi16(a427, 2);
-		a429 = ((__m128i) a428);
-
-		a430 = _mm_and_si128(a429, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a431 = (a367 + 5);
-		a432 = *(a431);
-		a433 = _mm_xor_si128(a387, a432);
-		a434 = ((__m128i) a433);
-		a435 = _mm_srli_epi16(a434, 2);
-		a436 = ((__m128i) a435);
-
-		a437 = _mm_and_si128(a436, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		a438 = (a367 + 7);
-		a439 = *(a438);
-		a440 = _mm_xor_si128(a397, a439);
-		a441 = ((__m128i) a440);
-		a442 = _mm_srli_epi16(a441, 2);
-		a443 = ((__m128i) a442);
-
-		a444 = _mm_and_si128(a443, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63));
-
-		b39 = _mm_adds_epu8(a423, a430);
-		b40 = _mm_adds_epu8(b39, a437);
-		t28 = _mm_adds_epu8(b40, a444);
-		a445 = ((__m128i) t28);
-		a446 = _mm_srli_epi16(a445, 2);
-		a447 = ((__m128i) a446);
-
-		t29 = _mm_and_si128(a447, _mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63,
-			63, 63, 63, 63, 63, 63, 63, 63));
-		t30 = _mm_subs_epu8(_mm_set_epi8(63, 63, 63, 63, 63, 63, 63, 63, 
-			63, 63, 63, 63, 63, 63, 63, 63), t29);
-
-		m43 = _mm_adds_epu8(s52, t29);
-		m44 = _mm_adds_epu8(s53, t30);
-		m45 = _mm_adds_epu8(s52, t30);
-		m46 = _mm_adds_epu8(s53, t29);
-		a448 = _mm_min_epu8(m44, m43);
-		d19 = _mm_cmpeq_epi8(a448, m44);
-		a449 = _mm_min_epu8(m46, m45);
-		d20 = _mm_cmpeq_epi8(a449, m46);
-		s54 = _mm_movemask_epi8(_mm_unpacklo_epi8(d19, d20));
-		a450 = (b38 + 6);
-		*(a450) = s54;
-		s55 = _mm_movemask_epi8(_mm_unpackhi_epi8(d19, d20));
-		a451 = (b38 + 7);
-		*(a451) = s55;
-		s56 = _mm_unpacklo_epi8(a448, a449);
-		s57 = _mm_unpackhi_epi8(a448, a449);
-		a452 = (a413 + 2);
-		*(a452) = s56;
-		a453 = (a413 + 3);
-		*(a453) = s57;
-
-		if ((((unsigned char*)OldMet)[0] > RENORMALIZE_THRESHOLD)) {
-			__m128i m12, m13;
-			m12 = ((__m128i*)  OldMet)[0];
-			m12 = _mm_min_epu8(m12, ((__m128i*)  OldMet)[1]);
-			m12 = _mm_min_epu8(m12, ((__m128i*)  OldMet)[2]);
-			m12 = _mm_min_epu8(m12, ((__m128i*)  OldMet)[3]);
-			__m128i m14;
-			m14 = _mm_min_epu8(_mm_srli_si128(m12, 8), m12);
-			m14 = ((__m128i) _mm_min_epu8(((__m128i) _mm_srli_epi64(m14, 32)), ((__m128i) m14)));
-			m14 = ((__m128i) _mm_min_epu8(((__m128i) _mm_srli_epi64(m14, 16)), ((__m128i) m14)));
-			m14 = ((__m128i) _mm_min_epu8(((__m128i) _mm_srli_epi64(m14, 8)), ((__m128i) m14)));
-			m14 = _mm_unpacklo_epi8(m14, m14);
-			m14 = _mm_shufflelo_epi16(m14, _MM_SHUFFLE(0, 0, 0, 0));
-			m13 = _mm_unpacklo_epi64(m14, m14);
-			((__m128i*)  OldMet)[0] = _mm_subs_epu8(((__m128i*)  OldMet)[0], m13);
-			((__m128i*)  OldMet)[1] = _mm_subs_epu8(((__m128i*)  OldMet)[1], m13);
-			((__m128i*)  OldMet)[2] = _mm_subs_epu8(((__m128i*)  OldMet)[2], m13);
-			((__m128i*)  OldMet)[3] = _mm_subs_epu8(((__m128i*)  OldMet)[3], m13);
-		}
-	}
-
-
-// Viterbi chainback
-// ADDSHIFT and SUBSHIFT make sure that the thing returned is a byte.
-
-#define ADDSHIFT 2
-
-	// Make room beyond the end of the encoder register so we can
-	// accumulate a full byte of decoded data
-	
-	desicions += 6; // Look past tail
-
-	/* 
-	* The store into data[] only needs to be done every 8 bits.
-	* But this avoids a conditional branch, and the writes will
-	* combine in the cache anyway
-	*/
-
-	unsigned int k, kShl7, EndAddShift, Mod32EndAddShift, EndAddShiftDiv32, 
-		EndStateShr1, EndState = 0;
-	unsigned int NbitsShr3;
-	unsigned char* Outptr;
-
-	while (framebits-- != 0) {
-		EndAddShift = EndState >> ADDSHIFT;
-		NbitsShr3 = framebits >> 3;
-		EndAddShiftDiv32 = EndAddShift >> 5;
-		EndStateShr1 = EndState >> 1;
-		Mod32EndAddShift = EndAddShift & 31;
-		Outptr = output + NbitsShr3;
-		k = (desicions[framebits].w[EndAddShiftDiv32] >> Mod32EndAddShift) & 1;
-		kShl7 = k << 7;
-		EndState = EndStateShr1 | kShl7;
-		*Outptr = (unsigned char)EndState;
-	}
-	return 0;
+// The pointer to the selected decoder version. See setupdll.cpp.
+extern DECON *deconJumpTarget;
+
+// The external LUT for SSE2
+extern "C" int* symbols32LUT;
+
+// Constants for the viterbi-decoder. The constants are well arranged in
+// memory so that every function needs to read from two cache-lines only.
+extern "C" const __m128i
+m128_63_0,              // init old_metrics first field
+m128_63,                // init old_metrics other fields and renormalizing
+m128_1st_XOR_0_3_4_7,   // 1st XOR value for symbols 0, 3, 4 and 7
+m128_2nd_XOR_0_3_4_7,   // 2nd XOR value for symbols 0, 3, 4 and 7
+m128_XOR_1_5,           // XOR value for symbols 1 and 5
+m128_XOR_2_6,           // XOR value for symbols 2 and 6
+m128_16X_0x1;           // Factor for SSE4.1 (needs a third cache-line)
+extern "C" const __m256i
+m256_63_0,              // init old_metrics first field, points to m128_63_0
+m256_XOR_0_3_4_7,       // XOR value for symbols 0, 3, 4 and 7
+m256_XOR_1_5,           // XOR value for symbols 1 and 5
+m256_XOR_2_6;           // XOR value for symbols 2 and 6
+
+
+// Local variables and setup for all 128-bit versions
+#define Locals \
+__m128i  OldMet[4], NewMet[4], survivor0, survivor1, \
+         decision0, decision1, metric, m_metric, m0, m1, m2, m3, \
+         sym0, sym1, sym2, sym3, r1, r2;\
+__m128i* old_metrics = (__m128i*)OldMet; \
+__m128i* new_metrics = (__m128i*)NewMet; \
+\
+int nbits = (framebits + 6) / 2; \
+decision_t decis[384 * 24 + 6];\
+decision_t *decisions = decis; \
+short int* d = (short int*)decis; \
+int dec0, dec1, dec2, dec3;\
+OldMet[0] = m128_63_0;\
+OldMet[1] = m128_63;\
+OldMet[2] = m128_63;\
+OldMet[3] = m128_63;\
+
+
+// Additional locals if the macro 'Butterfly2' is used.
+#define Locals2 \
+__m128i  survivor01, survivor11,\
+         decision01, decision11, metric1, m_metric1,\
+         m01, m11, m21, m31;
+
+// Additional locals if you try the 'Load4SymsMultiply' macro below.
+#define Locals_Multiply \
+long long *pqData = (long long*) piData;\
+long long q0, q1;
+
+
+// Local variables and setup for the 256-bit versions
+#define Locals256 \
+__m256i old_metrics[2], new_metrics[2],\
+        m256_sym0, m256_sym1, m256_sym2, m256_sym3,\
+        m256_sym4, m256_sym5, m256_sym6, m256_sym7,\
+        m256_metric, m256_m_metric, m256_survivor0, m256_survivor1,\
+        m256_decision0, m256_decision1, m256_m0, m256_m1, m256_m2, m256_m3,\
+        m256_metric1, m256_m_metric1, m256_survivor01, m256_survivor11,\
+        m256_decision01, m256_decision11, m256_m01, m256_m11, m256_m21,\
+        m256_m31, r256_63;\
+\
+int nbits = (framebits + 6) / 2;\
+decision_t decis[384 * 24 + 6];\
+decision_t* decisions = decis;\
+int* ddd = (int*)decisions;\
+old_metrics[0] = m256_63_0;\
+r256_63 = _mm256_broadcastb_epi8(m128_63);\
+old_metrics[1] = r256_63;
+
+
+// Below are some macros for loading and broadcasting the 'symbols'.
+// QIRX uses an array of 32-bit integers for the symbols. The symbols are
+// still in the range from 0 to 255, of course. This means the upper three
+// bytes of a symobl are always zero and we can try out other things for 
+// broadcasting beside of _mm_set1_epi8(). 
+//
+//
+// Loads and broadcasts four symbols by using the compiler-defaults.
+// Generates 'standard-sequences' for SSE2 or faster 'pshufb' instructions
+// if SSSE3++ or AVX is used.
+#define Load4Syms {\
+    sym0 = _mm_set1_epi8(*piData++);\
+    sym1 = _mm_set1_epi8(*piData++);\
+    sym2 = _mm_set1_epi8(*piData++);\
+    sym3 = _mm_set1_epi8(*piData++);\
 }
 
+// Loads and broadcasts four symbols by using the LUT generated in DllMain
+// at startup. For SSE2 only.
+#define Load4SymsLUT {\
+    sym0 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
+    sym1 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
+    sym2 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
+    sym3 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
+}
+
+// Loads and broadcasts four symbols by using two GPR and two 64-bit integer
+// multiplications. Only for SSE2. It will be fast on older CPU's from Intel,
+// so you may use it to avoid the LUT-method. However, use SSSE3 if supported.
+#define Load4SymsMultiply { \
+    q0 = *pqData++ * 0x1010101; \
+    q1 = *pqData++ * 0x1010101; \
+    sym0 = _mm_cvtsi64_si128(q0); \
+    sym1 = _mm_shuffle_epi32(sym0, 0x55); \
+    sym0 = _mm_shuffle_epi32(sym0, 0); \
+    sym2 = _mm_cvtsi64_si128(q1); \
+    sym3 = _mm_shuffle_epi32(sym2, 0x55); \
+    sym2 = _mm_shuffle_epi32(sym2, 0); \
+}
+
+// Another broadcast-macro for SSE2. Older CPU's do not like unaligned 128-bit
+// reads from memory. Macro just FYI.   
+#define Load4SymsRead128 { \
+    sym3 = _mm_loadu_si128((__m128i_u*)piData); \
+    piData += 4; \
+    sym1 = sym3; \
+    sym1 = _mm_unpacklo_epi8(sym1, sym3); \
+    sym3 = _mm_unpackhi_epi8(sym3, sym3); \
+    sym0 = _mm_shufflelo_epi16(sym1, 0); \
+    sym2 = _mm_shufflelo_epi16(sym3, 0); \
+    sym1 = _mm_shufflehi_epi16(sym1, 0); \
+    sym3 = _mm_shufflehi_epi16(sym3, 0); \
+    sym0 = _mm_shuffle_epi32(sym0, 0); \
+    sym2 = _mm_shuffle_epi32(sym2, 0); \
+    sym1 = _mm_shuffle_epi32(sym1, 170); \
+    sym3 = _mm_shuffle_epi32(sym3, 170); \
+}
+
+// Loads and broadcasts four symbols by using the 'pmulld' instruction. For
+// SSE4.1 only. The constant 'm128_16X_0x1' can easily created on the fly
+// just before the main-loop, but the compiler doesn't like this and uses this
+// additional constant instead. The SSE4.1 version not used in final release,
+// because the SSSE3 version runs faster on all tested CPU's.
+// If you wanna try SSE4.1 uncomment the "m128_16X_0x1" label in const.asm
+#define Load4SymsSSE41 {\
+    sym3 = _mm_mullo_epi32(m128_16X_0x1, *(__m128i_u*)piData);\
+    sym0 = _mm_shuffle_epi32(sym3, 0);\
+    sym1 = _mm_shuffle_epi32(sym3, 0x55);\
+    sym2 = _mm_shuffle_epi32(sym3, 0xaa);\
+    sym3 = _mm_shuffle_epi32(sym3, 0xff);\
+    piData += 4;\
+}
+
+// Load8Syms256 used for AVX2 and AVX512 generates native 'vpbroadcastb'
+// instructions. We (try to) load eight symbols at the top of the main-loop.
+// The compiler may decide to schedule other upcoming instructions from the
+// 'butterfly', such as 'vpxor' or 'vpavgb', in between, so some registers
+// can be reused within this sequence.  
+#define Load8Syms256 { \
+    m256_sym0 = _mm256_set1_epi8(*piData++);\
+    m256_sym1 = _mm256_set1_epi8(*piData++);\
+    m256_sym2 = _mm256_set1_epi8(*piData++);\
+    m256_sym3 = _mm256_set1_epi8(*piData++);\
+    m256_sym4 = _mm256_set1_epi8(*piData++);\
+    m256_sym5 = _mm256_set1_epi8(*piData++);\
+    m256_sym6 = _mm256_set1_epi8(*piData++);\
+    m256_sym7 = _mm256_set1_epi8(*piData++);\
+}
+
+
+// The standard butterfly for 128-bit.
+#define ButterFly(old_metrics, new_metrics) {\
+    m0 = _mm_xor_si128(sym0, m128_1st_XOR_0_3_4_7);\
+    m1 = r1 = _mm_xor_si128(sym1, m128_XOR_1_5);\
+    m2 = r2 = _mm_xor_si128(sym2, m128_XOR_2_6);\
+    m3 = _mm_xor_si128(sym3, m128_1st_XOR_0_3_4_7);\
+    m0 = _mm_avg_epu8(m0, m1);\
+    m1 = _mm_avg_epu8(m2, m3);\
+    metric = _mm_avg_epu8(m0, m1);\
+    metric = _mm_srli_epi16(metric, 2);\
+    metric = _mm_and_si128(metric, m128_63);\
+    m_metric = _mm_subs_epu8(m128_63, metric);\
+    m0 = _mm_adds_epu8(old_metrics[0], metric);\
+    m1 = _mm_adds_epu8(old_metrics[2], m_metric);\
+    m2 = _mm_adds_epu8(old_metrics[0], m_metric);\
+    m3 = _mm_adds_epu8(old_metrics[2], metric);\
+    survivor0 = _mm_min_epu8(m1, m0);\
+    decision0 = _mm_cmpeq_epi8(survivor0, m1);\
+    survivor1 = _mm_min_epu8(m3, m2);\
+    decision1 = _mm_cmpeq_epi8(survivor1, m3);\
+    dec0 = _mm_movemask_epi8(_mm_unpacklo_epi8(decision0, decision1));\
+    dec1 = _mm_movemask_epi8(_mm_unpackhi_epi8(decision0, decision1));\
+    new_metrics[0] = _mm_unpacklo_epi8(survivor0, survivor1);\
+    new_metrics[1] = _mm_unpackhi_epi8(survivor0, survivor1);\
+\
+    m0 = _mm_xor_si128(sym0, m128_2nd_XOR_0_3_4_7); \
+    m3 = _mm_xor_si128(sym3, m128_2nd_XOR_0_3_4_7); \
+    m0 = _mm_avg_epu8(m0, r1);\
+    m1 = _mm_avg_epu8(r2, m3);\
+    metric = _mm_avg_epu8(m0, m1);\
+    metric = _mm_srli_epi16(metric, 2);\
+    metric = _mm_and_si128(metric, m128_63);\
+    m_metric = _mm_subs_epu8(m128_63, metric);\
+    m0 = _mm_adds_epu8(old_metrics[1], metric);\
+    m1 = _mm_adds_epu8(old_metrics[3], m_metric);\
+    m2 = _mm_adds_epu8(old_metrics[1], m_metric);\
+    m3 = _mm_adds_epu8(old_metrics[3], metric);\
+    survivor0 = _mm_min_epu8(m1, m0);\
+    decision0 = _mm_cmpeq_epi8(survivor0, m1);\
+    survivor1 = _mm_min_epu8(m3, m2);\
+    decision1 = _mm_cmpeq_epi8(survivor1, m3);\
+    dec2 = _mm_movemask_epi8(_mm_unpacklo_epi8(decision0, decision1));\
+    dec3 = _mm_movemask_epi8(_mm_unpackhi_epi8(decision0, decision1));\
+    *(int*)d++ = dec0;\
+    *(int*)d++ = dec1;\
+    *(int*)d++ = dec2;\
+    *(int*)d++ = dec3;\
+    new_metrics[2] = _mm_unpacklo_epi8(survivor0, survivor1);\
+    new_metrics[3] = _mm_unpackhi_epi8(survivor0, survivor1);\
+}
+
+// Another 128-bit butterfly with some more variables.
+#define ButterFly2(old_metrics, new_metrics) { \
+    m0 = _mm_xor_si128(sym0, m128_1st_XOR_0_3_4_7);\
+    m1 = r1 = _mm_xor_si128(sym1, m128_XOR_1_5);\
+    m2 = r2 = _mm_xor_si128(sym2, m128_XOR_2_6);\
+    m3 = _mm_xor_si128(sym3, m128_1st_XOR_0_3_4_7);\
+    m0 = _mm_avg_epu8(m0, m1);\
+    m01 = _mm_xor_si128(sym0, m128_2nd_XOR_0_3_4_7);\
+    m1 = _mm_avg_epu8(m2, m3);\
+    m31 = _mm_xor_si128(sym3, m128_2nd_XOR_0_3_4_7);\
+    metric = _mm_avg_epu8(m0, m1);\
+    metric = _mm_srli_epi16(metric, 2);\
+    m01 = _mm_avg_epu8(m01, r1);\
+    metric = _mm_and_si128(metric, m128_63);\
+    m11 = _mm_avg_epu8(r2, m31);\
+    m_metric = _mm_subs_epu8(m128_63, metric);\
+    metric1 = _mm_avg_epu8(m01, m11);\
+    m0 = _mm_adds_epu8(old_metrics[0], metric);\
+    m1 = _mm_adds_epu8(old_metrics[2], m_metric);\
+    m2 = _mm_adds_epu8(old_metrics[0], m_metric);\
+    m3 = _mm_adds_epu8(old_metrics[2], metric);\
+    survivor0 = _mm_min_epu8(m1, m0);\
+    survivor1 = _mm_min_epu8(m3, m2);\
+    decision0 = _mm_cmpeq_epi8(survivor0, m1);\
+    decision1 = _mm_cmpeq_epi8(survivor1, m3);\
+    metric1 = _mm_srli_epi16(metric1, 2);\
+    metric1 = _mm_and_si128(metric1, m128_63);\
+    m_metric1 = _mm_subs_epu8(m128_63, metric1);\
+    dec0 = _mm_movemask_epi8(_mm_unpacklo_epi8(decision0, decision1));\
+    dec1 = _mm_movemask_epi8(_mm_unpackhi_epi8(decision0, decision1));\
+    new_metrics[0] = _mm_unpacklo_epi8(survivor0, survivor1);\
+    new_metrics[1] = _mm_unpackhi_epi8(survivor0, survivor1);\
+\
+    m01 = _mm_adds_epu8(old_metrics[1], metric1);\
+    m11 = _mm_adds_epu8(old_metrics[3], m_metric1);\
+    m21 = _mm_adds_epu8(old_metrics[1], m_metric1);\
+    m31 = _mm_adds_epu8(old_metrics[3], metric1);\
+    survivor01 = _mm_min_epu8(m11, m01);\
+    survivor11 = _mm_min_epu8(m31, m21);\
+    decision01 = _mm_cmpeq_epi8(survivor01, m11);\
+    decision11 = _mm_cmpeq_epi8(survivor11, m31);\
+    dec2 = _mm_movemask_epi8(_mm_unpacklo_epi8(decision01, decision11));\
+    dec3 = _mm_movemask_epi8(_mm_unpackhi_epi8(decision01, decision11));\
+    *(int*)d++ = dec0;\
+    *(int*)d++ = dec1;\
+    *(int*)d++ = dec2;\
+    *(int*)d++ = dec3;\
+    new_metrics[2] = _mm_unpacklo_epi8(survivor01, survivor11);\
+    new_metrics[3] = _mm_unpackhi_epi8(survivor01, survivor11);\
+}
+
+// The 256-bit butterfly.
+#define Butterfly256(old_metrics, new_metrics) {\
+    m256_sym0 = _mm256_xor_si256(m256_sym0, m256_XOR_0_3_4_7);\
+    m256_sym1 = _mm256_xor_si256(m256_sym1, m256_XOR_1_5);\
+    m256_sym2 = _mm256_xor_si256(m256_sym2, m256_XOR_2_6);\
+    m256_m0 = _mm256_avg_epu8(m256_sym0, m256_sym1);\
+    m256_sym3 = _mm256_xor_si256(m256_sym3, m256_XOR_0_3_4_7);\
+    m256_m1 = _mm256_avg_epu8(m256_sym2, m256_sym3);\
+    m256_sym4 = _mm256_xor_si256(m256_sym4, m256_XOR_0_3_4_7);\
+    m256_sym5 = _mm256_xor_si256(m256_sym5, m256_XOR_1_5);\
+    m256_metric = _mm256_avg_epu8(m256_m0, m256_m1);\
+    m256_sym6 = _mm256_xor_si256(m256_sym6, m256_XOR_2_6);\
+    m256_sym7 = _mm256_xor_si256(m256_sym7, m256_XOR_0_3_4_7);\
+    m256_m01 = _mm256_avg_epu8(m256_sym4, m256_sym5);\
+    m256_metric = _mm256_srli_epi16(m256_metric, 2);\
+    m256_m11 = _mm256_avg_epu8(m256_sym6, m256_sym7);\
+    m256_metric = _mm256_and_si256(m256_metric, r256_63);\
+    m256_m_metric = _mm256_subs_epu8(r256_63, m256_metric);\
+    m256_metric1 = _mm256_avg_epu8(m256_m01, m256_m11);\
+    m256_m0 = _mm256_adds_epu8(old_metrics[0], m256_metric);\
+    m256_m1 = _mm256_adds_epu8(old_metrics[1], m256_m_metric);\
+    m256_m2 = _mm256_adds_epu8(old_metrics[0], m256_m_metric);\
+    m256_m3 = _mm256_adds_epu8(old_metrics[1], m256_metric);\
+    m256_survivor0 = _mm256_min_epu8(m256_m1, m256_m0);\
+    m256_survivor1 = _mm256_min_epu8(m256_m3, m256_m2);\
+    m256_decision0 = _mm256_cmpeq_epi8(m256_survivor0, m256_m1);\
+    m256_decision1 = _mm256_cmpeq_epi8(m256_survivor1, m256_m3);\
+    new_metrics[0] = _mm256_unpacklo_epi8(m256_survivor0, m256_survivor1);\
+    new_metrics[1] = _mm256_unpackhi_epi8(m256_survivor0, m256_survivor1);\
+    new_metrics[0] = _mm256_permute4x64_epi64(new_metrics[0], 0b11'01'10'00);\
+    new_metrics[1] = _mm256_permute4x64_epi64(new_metrics[1], 0b11'01'10'00);\
+    m256_metric1 = _mm256_srli_epi16(m256_metric1, 2);\
+    m256_metric1 = _mm256_and_si256(m256_metric1, r256_63);\
+    m256_m_metric1 = _mm256_subs_epu8(r256_63, m256_metric1);\
+    m256_m01 = _mm256_adds_epu8(new_metrics[0], m256_metric1);\
+    m256_m11 = _mm256_adds_epu8(new_metrics[1], m256_m_metric1);\
+    m256_m21 = _mm256_adds_epu8(new_metrics[0], m256_m_metric1);\
+    m256_m31 = _mm256_adds_epu8(new_metrics[1], m256_metric1);\
+    m256_survivor01 = _mm256_min_epu8(m256_m11, m256_m01);\
+    m256_decision01 = _mm256_cmpeq_epi8(m256_survivor01, m256_m11);\
+    m256_survivor11 = _mm256_min_epu8(m256_m31, m256_m21);\
+    m256_decision11 = _mm256_cmpeq_epi8(m256_survivor11, m256_m31);\
+    *ddd++ = _mm256_movemask_epi8(\
+        _mm256_unpacklo_epi8(m256_decision0, m256_decision1));\
+    *ddd++ = _mm256_movemask_epi8(\
+        _mm256_unpackhi_epi8(m256_decision0, m256_decision1));\
+    *ddd++ = _mm256_movemask_epi8(\
+        _mm256_unpacklo_epi8(m256_decision01, m256_decision11));\
+    *ddd++ = _mm256_movemask_epi8(\
+        _mm256_unpackhi_epi8(m256_decision01, m256_decision11));\
+    old_metrics[0] = _mm256_unpacklo_epi8(m256_survivor01, m256_survivor11);\
+    old_metrics[1] = _mm256_unpackhi_epi8(m256_survivor01, m256_survivor11);\
+    old_metrics[0] = _mm256_permute4x64_epi64(old_metrics[0], 0b11'01'10'00);\
+    old_metrics[1] = _mm256_permute4x64_epi64(old_metrics[1], 0b11'01'10'00);\
+}
+
+
+
+// Macros for re-normalizing.
+// The original macro searches for the lowest byte > 0 inside of the given 
+// metrics. This takes time and is not necessary here. I use a simplified macro
+// that always subtracts the constant value of 63 from 'old_metrics' if
+// RENORMALIZE_THRESHOLD triggers at the end of the main-loop. This is much
+// faster and has no drawbacks. We'll see the same FER/BER as with the original
+// macro, if RENORMALIZE_THRESHOLD stays below 180.
+#define Renormalize128(metrics) {\
+    if (((unsigned char*) metrics)[0] > RENORMALIZE_THRESHOLD) {\
+        metrics[0] = _mm_subs_epu8(metrics[0], m128_63);\
+        metrics[1] = _mm_subs_epu8(metrics[1], m128_63);\
+        metrics[2] = _mm_subs_epu8(metrics[2], m128_63);\
+        metrics[3] = _mm_subs_epu8(metrics[3], m128_63);\
+    }\
+}
+
+#define Renormalize256(metrics) {\
+    if (((unsigned char*) metrics)[0] > RENORMALIZE_THRESHOLD) {\
+        metrics[0] = _mm256_subs_epu8(metrics[0], r256_63);\
+        metrics[1] = _mm256_subs_epu8(metrics[1], r256_63);\
+    }\
+}
+
+
+// The macro for chain-back 
+#define ChainBack {\
+    decisions += 6;\
+    unsigned int k, kShl7, EndAddShift,\
+    Mod32EndAddShift, EndAddShiftDiv32,\
+    EndStateShr1, NbitsShr3, EndState = 0;\
+    unsigned char* Outptr;\
+\
+    while (framebits-- != 0){\
+        EndAddShift = EndState >> 2;\
+        NbitsShr3 = framebits >> 3;\
+        EndAddShiftDiv32 = EndAddShift >> 5;\
+        EndStateShr1 = EndState >> 1;\
+        Mod32EndAddShift = EndAddShift & 31;\
+        Outptr = output + NbitsShr3;\
+        k = (decisions[framebits].w[EndAddShiftDiv32] >> Mod32EndAddShift) & 1;\
+        kShl7 = k << 7;\
+        EndState = EndStateShr1 | kShl7;\
+        *Outptr = (unsigned char)EndState;\
+    }\
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// The code goes here.
+///////////////////////////////////////////////////////////////////////////////
+
+#ifdef _VIT_NO_ASM_
+
+extern "C" {
+    __attribute__((target("sse2")))
+    int decon_sse2_lut32(unsigned int framebits,
+        unsigned int* piData, int inputLength, unsigned char* output) {
+        
+        Locals
+        Locals2
+        while (nbits--) {
+            Load4SymsLUT
+            ButterFly2(old_metrics, new_metrics)
+            Load4SymsLUT
+            ButterFly2(new_metrics, old_metrics)
+            Renormalize128(old_metrics)
+        }
+        ChainBack
+        return 0;
+    }
+
+
+    __attribute__((target("ssse3")))
+    int decon_ssse3(unsigned int framebits,
+        unsigned int* piData, int inputLength, unsigned char* output) {
+
+        Locals
+        Locals2
+        while (nbits--) {
+            Load4Syms
+            ButterFly2(old_metrics, new_metrics)
+            Load4Syms
+            ButterFly2(new_metrics, old_metrics)
+            Renormalize128(old_metrics)
+        }
+        ChainBack
+        return 0;
+    }
+/*
+    __attribute__((target("sse4.1")))
+    int decon_sse41(unsigned int framebits,
+        unsigned int* piData, int inputLength, unsigned char* output) {
+
+        Locals
+        Locals2
+        while (nbits--) {
+            Load4SymsSSE41
+            ButterFly2(old_metrics, new_metrics)
+            Load4SymsSSE41
+            ButterFly2(new_metrics, old_metrics)
+            Renormalize128(old_metrics)
+        }
+        ChainBack
+        return 0;
+    }
+*/
+    __attribute__((target("avx")))
+    int decon_avx(unsigned int framebits,
+        unsigned int* piData, int inputLength, unsigned char* output) {
+ 
+        Locals
+        Locals2
+        while (nbits--) {
+            Load4Syms
+            ButterFly2(old_metrics, new_metrics)
+            Load4Syms
+            ButterFly2(new_metrics, old_metrics)
+            Renormalize128(old_metrics)
+        }
+        ChainBack
+        return 0;
+    }
+
+    __attribute__((target("avx2")))
+    int decon_avx2(unsigned int framebits,
+        unsigned int* piData, int inputLength, unsigned char* output) {
+
+        Locals256
+        while (nbits--) {
+            Load8Syms256
+            Butterfly256(old_metrics, new_metrics)
+            Renormalize256(old_metrics)
+        }
+        ChainBack
+        return 0;
+    }
+} // extern "C"
+#endif
+
+// The AVX512 version will be used in both configurations, because
+// I can't test the (disabled) assembly-language version. 
+extern "C" {
+    __attribute__((target("avx512f, avx512bw, avx512vl")))
+        int decon_avx5(unsigned int framebits,
+            unsigned int* piData, int inputLength, unsigned char* output) {
+
+        Locals256
+        while (nbits--) {
+            Load8Syms256
+            Butterfly256(old_metrics, new_metrics)
+            Renormalize256(old_metrics)
+        }
+        ChainBack
+        return 0;
+    }
+}
+
+
+// CPU dispatcher
+#ifndef VIT_WRITE_LOGFILE
+int deconvolve(unsigned int framebits, unsigned int* piData,
+    int inputLength, unsigned char* output) {
+    return deconJumpTarget(framebits, piData, inputLength, output);
+}
+#else
+
+extern char *double2str(double x, int WidthPrec, char* buffer);
+extern HANDLE hVitLogFile;
+extern char *deconSymLow, *deconSymHig, *deconOutLow, *deconOutHig;
+#ifdef VIT_WRITE_SYMBOLS
+extern HANDLE hVitLogFileSymbols;
+extern unsigned char* symBuf;
+#endif
+
+unsigned int counter, entry;
+ULARGE_INTEGER lastEntryTime;
+
+
+int deconvolve(unsigned int framebits, unsigned int* piData,
+    int inputLength, unsigned char* output) {
+    int retval;
+    DWORD numBytesWritten;
+    ULARGE_INTEGER entryTime, leaveTime;
+    FILETIME fte, ftl;
+    SYSTEMTIME sysTime;
+    unsigned long long stackHighLimit;
+    char szBuffer[320], szDuration[32], szLastCallTime[32];
+    double dDuration, dLastCallTime = 0;
+
+    if (INVALID_HANDLE_VALUE != hVitLogFile) {
+        entry++;
+
+        GetSystemTimePreciseAsFileTime(&fte);
+        retval = deconJumpTarget(framebits, piData, inputLength, output);
+        GetSystemTimePreciseAsFileTime(&ftl);
+// Reading directly from the TIB to avoid GetCurrentThreadStackLimits()
+// which is not supported in Windows 7.
+// See https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
+        stackHighLimit =__readgsqword(0x8);
+        entryTime.HighPart = fte.dwHighDateTime;
+        entryTime.LowPart = fte.dwLowDateTime;
+        leaveTime.HighPart = ftl.dwHighDateTime;
+        leaveTime.LowPart = ftl.dwLowDateTime;
+        dDuration = (leaveTime.QuadPart - entryTime.QuadPart) * 0.1;
+        if (lastEntryTime.QuadPart)
+            dLastCallTime = (double)(entryTime.QuadPart
+                - lastEntryTime.QuadPart) / 10000.0; // ms
+
+        lastEntryTime = entryTime;
+        FileTimeToSystemTime(&fte, &sysTime);
+// calculate microsecs of current second
+        entryTime.QuadPart = (entryTime.QuadPart % 10000000uLL) / 10uLL;
+        wsprintf(szBuffer, "%6u  %02u:%02u:%02u.%06u  dT: %s ms  "
+            "TID: %5u  StU: %5i  deco: %s us  "
+            "ReE: %i  fBits: %4i  Sym: 0x%p  Out: 0x%p\n",
+            counter++,
+            sysTime.wHour, sysTime.wMinute, sysTime.wSecond,
+            entryTime.LowPart,
+            double2str(dLastCallTime, MAKELONG(8, 3),
+                szLastCallTime),
+            GetCurrentThreadId(),
+// Stack-usage of current thread. We use the shadow-space address of the
+// register rcx (it's 'framebits' here) right above of the return address on
+// the stack.
+            (int)(stackHighLimit - (unsigned long long) &framebits),
+            double2str(dDuration, MAKELONG(6, 1), szDuration),
+// If another thread enters the function until we are here the value will be 1.
+// Never seen, but this may change in the future.
+            --entry,
+            framebits,
+            piData,
+            output);
+        WriteFile(hVitLogFile, szBuffer, lstrlen(szBuffer),
+            &numBytesWritten, NULL);
+
+        if ((char*)piData < deconSymLow) deconSymLow = (char*)piData;
+        if ((char*)piData > deconSymHig) deconSymHig = (char*)piData;
+        if ((char*)output < deconOutLow) deconOutLow = (char*)output;
+        if ((char*)output > deconOutHig) deconOutHig = (char*)output;
+
+
+#ifdef VIT_WRITE_SYMBOLS
+        if (INVALID_HANDLE_VALUE != hVitLogFileSymbols) {
+            for (int i = 0; i < ((framebits + 6) * 4); i++)
+                symBuf[i] = *(unsigned char*)&piData[i];
+
+            WriteFile(hVitLogFileSymbols, symBuf, (framebits + 6) * 4,
+                &numBytesWritten, NULL);
+        }
+#endif
+    }
+    else
+        retval = deconJumpTarget(framebits, piData, inputLength, output);
+
+    return retval;
+}
+#endif
