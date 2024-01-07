@@ -16,6 +16,10 @@ For CPU's that support at least the AVX2 instruction-set a 32-way viterbi-decode
 
 ### Improved 128-bit (16-way) versions of the viterbi-decoder
 One of the challenges in optimizing the viterbi-decoder for CPU's without AVX2 is the lack of a native instruction that broadcasts one byte (a 'symbol') from memory to all bytes of an XMM-register. There are some ways to do that (see the sources), but after many tests and benchmarks only one method remained for SSE2 in the final release. This method uses a lookup table (LUT) in which the 256 possible symbols are stored as "ready to go" values. The disadvantages of this method are that the LUT should always stay in the L1-cache and of course the necessary additional memory accesses. The decoder for CPU's with SSSE3 support plays in the same league and the AVX decoder can have an additional boost, likely on older CPU's from Intel (like Ivy-Bridge). However, the measured speeds of the 128-bit decoders can vary from one CPU to another, due to different cache-sizes, memory-bandwidth etc.
+
+Note: If you use older versions of QIRX (like v3.xx), I strongly recommend that you replace the viterbi.dll used there. This also applies to the last free version 3.22, which you can get from Clem's website and if you downloaded this package before January 2024. The installation package before January 2024 contains a viterbi.dll with the inefficient code from 2018.
+
+
       
 ### Improved function "RSCheckSuperframe"
 The old lookup-table for modulo-values was replaced with an efficient Mod255()-function which fits our needs. Further optimizations have led to a remarkable increase in speed.
