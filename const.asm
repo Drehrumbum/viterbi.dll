@@ -13,11 +13,11 @@ comment!#######################################################################
 
 include const.inc
 
-hevoconst segment align (64) 'CONST'
-; --- cache-line ---
 
-m128_63_0 label xmmword
+_rdata segment align(64) alias(".rdata") readonly
+;--- cache-line ---
 m256_63_0 label ymmword
+m128_63_0 label xmmword
 db      0
 db     15 dup(63)
 
@@ -67,5 +67,5 @@ db     000H, 0FFH, 000H, 0FFH, 000H, 0FFH, 000H, 0FFH,
 ;m128_16X_0x1 label xmmword
 ;db     16 dup(1)
 
-hevoconst ends
+_rdata ends
 end

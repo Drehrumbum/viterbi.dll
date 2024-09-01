@@ -43,7 +43,7 @@
 * within the main loop. This is most likely not what you want. 
 * It's a playground - have fun.
 * 
-* (c) 2021-23 Heiko Vogel <hevog@gmx.de>
+* (c) 2021-24 Heiko Vogel <hevog@gmx.de>
 * 
 */
 
@@ -54,12 +54,8 @@
 #define __SSE4_1__
 #define __AVX__
 #define __AVX2__
-
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <intrin.h>
 #include "viterbi.h"
+#include <intrin.h>
 
 
 // The pointer to the selected decoder version. See setupdll.cpp.
@@ -140,8 +136,12 @@ old_metrics[1] = r256_63;
 // QIRX uses an array of 32-bit integers for the symbols. The symbols are
 // still in the range from 0 to 255, of course. This means the upper three
 // bytes of a symobl are always zero and we can try out other things for 
-// broadcasting beside of _mm_set1_epi8(). 
-//
+// broadcasting beside of _mm_set1_epi8().
+// 
+// UPDATE 2024-09: The last sentences above are not entirely correct. It
+// turns out that under very rare conditions the “symbols” are greater
+// than 255. This caused crashes inside of the DLL when the SSE2-decoder
+// was used. The other decoders were not affected.
 //
 // Loads and broadcasts four symbols by using the compiler-defaults.
 // Generates 'standard-sequences' for SSE2 or faster 'pshufb' instructions
@@ -155,11 +155,13 @@ old_metrics[1] = r256_63;
 
 // Loads and broadcasts four symbols by using the LUT generated in DllMain
 // at startup. For SSE2 only.
+// UPDATE 2024-09: Clamping the symbols to 0xFF. Don't worry, there will be
+// no additional AND instructions inside of the code.
 #define Load4SymsLUT {\
-    sym0 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
-    sym1 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
-    sym2 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
-    sym3 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++]), 0);\
+    sym0 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++ & 0xFF]), 0);\
+    sym1 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++ & 0xFF]), 0);\
+    sym2 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++ & 0xFF]), 0);\
+    sym3 = _mm_shuffle_epi32(_mm_cvtsi32_si128(symbols32LUT[*piData++ & 0xFF]), 0);\
 }
 
 // Loads and broadcasts four symbols by using two GPR and two 64-bit integer
@@ -418,7 +420,7 @@ old_metrics[1] = r256_63;
     EndStateShr1, NbitsShr3, EndState = 0;\
     unsigned char* Outptr;\
 \
-    while (framebits-- != 0){\
+    while (framebits--){\
         EndAddShift = EndState >> 2;\
         NbitsShr3 = framebits >> 3;\
         EndAddShiftDiv32 = EndAddShift >> 5;\
@@ -437,13 +439,13 @@ old_metrics[1] = r256_63;
 // The code goes here.
 ///////////////////////////////////////////////////////////////////////////////
 
+
 #ifdef _VIT_NO_ASM_
 
 extern "C" {
     __attribute__((target("sse2")))
     int decon_sse2_lut32(unsigned int framebits,
         unsigned int* piData, int inputLength, unsigned char* output) {
-        
         Locals
         Locals2
         while (nbits--) {
@@ -529,19 +531,19 @@ extern "C" {
 // I can't test the (disabled) assembly-language version. 
 extern "C" {
     __attribute__((target("avx512f, avx512bw, avx512vl")))
-        int decon_avx5(unsigned int framebits,
-            unsigned int* piData, int inputLength, unsigned char* output) {
-
+    int decon_avx5(unsigned int framebits,
+        unsigned int* piData, int inputLength, unsigned char* output) {
         Locals256
-        while (nbits--) {
-            Load8Syms256
-            Butterfly256(old_metrics, new_metrics)
-            Renormalize256(old_metrics)
-        }
+            while (nbits--) {
+                Load8Syms256
+                Butterfly256(old_metrics, new_metrics)
+                Renormalize256(old_metrics)
+            }
         ChainBack
         return 0;
     }
 }
+
 
 
 // CPU dispatcher
@@ -551,13 +553,12 @@ int deconvolve(unsigned int framebits, unsigned int* piData,
     return deconJumpTarget(framebits, piData, inputLength, output);
 }
 #else
-
 extern char *double2str(double x, int WidthPrec, char* buffer);
 extern HANDLE hVitLogFile;
 extern char *deconSymLow, *deconSymHig, *deconOutLow, *deconOutHig;
 #ifdef VIT_WRITE_SYMBOLS
 extern HANDLE hVitLogFileSymbols;
-extern unsigned char* symBuf;
+extern unsigned int* symBuf;
 #endif
 
 unsigned int counter, entry;
@@ -629,11 +630,15 @@ int deconvolve(unsigned int framebits, unsigned int* piData,
 
 #ifdef VIT_WRITE_SYMBOLS
         if (INVALID_HANDLE_VALUE != hVitLogFileSymbols) {
-            for (int i = 0; i < ((framebits + 6) * 4); i++)
-                symBuf[i] = *(unsigned char*)&piData[i];
+            //for (int i = 0; i < ((framebits + 6) * 4); i++)
+            //    symBuf[i] = *(unsigned char*)&piData[i];
 
-            WriteFile(hVitLogFileSymbols, symBuf, (framebits + 6) * 4,
-                &numBytesWritten, NULL);
+            //WriteFile(hVitLogFileSymbols, symBuf, (framebits + 6) * 4,
+            //    &numBytesWritten, NULL);
+
+// Write the 32-bit values directly to the log. 
+            WriteFile(hVitLogFileSymbols, piData, (framebits + 6) * 4 * sizeof(int),
+                 &numBytesWritten, NULL);
         }
 #endif
     }

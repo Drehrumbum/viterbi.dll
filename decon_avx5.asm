@@ -18,28 +18,29 @@ include chainback.inc
 .list
 
 
-hevo segment align(64) 'CODE'
+_TEXT$avx5 segment align(64)
 ShadowSpace = 0
 LocalSpace = DECISIONS_ARRAY_SIZE
 UseVex = 1
 NumLongOps = 0
-align 64
+org $ +30h ; mainloop stays at cache-line after merging
 decon_avx5 proc frame
 
     SaveRegs rdi, rsi
 
     mov            r10d,  ecx
-    add            ecx,   6
+    add            rcx,   6
     vpbroadcastb   ymm0,  byte ptr m128_63
     vmovdqa        ymm4,  m256_63_0
-    xor            eax,   eax
-    shr            ecx,   1
+    xor            rax,   rax
+    shr            rcx,   1
     vmovdqa        ymm1,  m256_XOR_0_3_4_7
     vmovdqa        ymm2,  m256_XOR_1_5
     vmovdqa        ymm3,  m256_XOR_2_6
     vmovdqa        ymm5,  ymm0
+    NOP_7
 
-; mainloop aligned @ entry + 0x40
+
 mainloop:
     sub            ecx,  1
     js             chainback
@@ -127,12 +128,12 @@ mainloop:
     vpsubusb       ymm5,  ymm5,  ymm0
     jmp            mainloop
 
-    chainback_mac
+    Chainback_mac
+    xor eax, eax
     RestoreRegs
     vzeroupper
-    xor eax, eax
     ret
 decon_avx5 endp
 
-hevo ends
+_TEXT$avx5 ends
 end

@@ -6,7 +6,7 @@ comment!#######################################################################
 #                                                                             #
 #  A little collection of low-level functions used in viterbi.dll.            #
 #                                                                             #
-#  (c) 2022-23 Heiko Vogel <hevog@gmx.de>                                     #
+#  (c) 2022-24 Heiko Vogel <hevog@gmx.de>                                     #
 ##############################################################################!
 
 .nolist
@@ -44,7 +44,7 @@ ShadowSpace = 0 ; no calls to other functions
 LocalSpace  = 0 ; no stack-space
 
 .code
-align 16
+align 8
 GetCPUCaps proc frame 
     SaveRegs rbx
 
@@ -159,49 +159,30 @@ GetCPUCaps endp
 
 comment!#######################################################################
 #                                                                             #
-#  TouchStack walks down the stack of the calling thread for the given amount #
-#  of bytes to make sure the system commits the mem-pages for local variables #
-#  on the thread's stack one by one.                                          #
-#                                                                             #
-#                                                                             #
-#  extern "C" void TouchStack (int iNumBytes);                                #
-#                                                                             #
-#  Arguments:  ecx - The number of bytes the caller needs for its locals.     #
-#  Exceptions: stack-overflow, if the function reaches the bottom of the      #
-#              stack.                                                         #
-#                                                                             #
-##############################################################################!
-
-align 16
-TouchStack proc
-    mov eax, -1000h         ; eax = 0xFFFF'F000
-    mov rdx, rsp
-    sub ecx, eax            ; add one mem-page to wanted LocalSize
-    and ecx, eax            ; round down to a multiple of page-size
-    sub rdx, rcx
-@@: test [rdx + rcx], eax   ; touch the (guarded) memory-page
-    add ecx, eax            ; one page down
-    jns @b                  ; repeat until we have reached the final address 
-    ret                     ; at rsp - ((LocalSize + 0x1000) & -0x1000)
-TouchStack endp
-
-
-comment!#######################################################################
-#                                                                             #
 #  Two labels used by "WakeUpYMM()" for powering-up the 256-bit-stages in     #
 #  advance.                                                                   #
 #                                                                             #
 #  void WakeUpYMM();                                                          #
 #                                                                             #
+#  The function is declared as void, so the return value doesn't care in this #
+#  case.                                                                      #
+#                                                                             #
+#  The label decon_savemode is used by the exception-handler as a new jump    #
+#  target for the cpu-dispatcher of 'deconvolve' if it handles a exception in #
+#  'deconvolve'. The return value tells QIRX that something went wrong. Well, #
+#  it's almost impossible that you ever see such things during operation.     #
+#                                                                             #
 ##############################################################################!
 
-public xorYMM, noYMM
-align 16
+public xorYMM, noYMM, decon_savemode
+align 8
 xorYMM:
     vxorps   ymm0, ymm0, ymm0
     vzeroupper
     nop
 noYMM:
+decon_savemode:
+    mov eax, 1
     ret
 
 end

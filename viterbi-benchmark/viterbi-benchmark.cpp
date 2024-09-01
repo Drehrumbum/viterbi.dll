@@ -34,7 +34,7 @@
 * http://www.ka9q.net/code/fec/ or at Github. It may be used under the terms of
 * the GNU Lesser General Public License (LGPL).
 *
-* 2023 Heiko Vogel <hevog@gmx.de>
+* 2023/24 Heiko Vogel <hevog@gmx.de>
 * 
 */
 
@@ -42,6 +42,7 @@
 
 #undef UNICODE
 #define _CRT_SECURE_NO_WARNINGS // We don't fly to the moon...
+#define _CRT_SECURE_NO_DEPRECATE
 
 #include <windows.h>
 #include <stdio.h>
@@ -72,12 +73,13 @@ typedef int (WINAPI* DECONVOLVE)(int frameBits, COMPUTETYPE* symbols,
     int unused, unsigned char* decodedBits);
 typedef int (WINAPI* GETCPUCAPS)();
 typedef int (WINAPI* INITIALIZE)();
-typedef void (WINAPI* TOUCHSTACK)(int iLocalBytes);
+typedef int (WINAPI* RSCHECKSUP)(unsigned char* p, int startIx,
+    unsigned int RSDims, unsigned char* outVector);
 
 INITIALIZE initialize;
 DECONVOLVE deconvolve;
 GETCPUCAPS GetCPUCaps;
-TOUCHSTACK TouchStack;
+RSCHECKSUP RScheckSuperframe;
 
 
 // Bitmasks returned by GetCPUCaps
@@ -93,7 +95,6 @@ TOUCHSTACK TouchStack;
 #define CpuHasAVX5  0b10000000
 
 
-
 int GetProcessorInfo();
 int GetUserLocalAppDataFolder(char* szPath);
 int SetIniFileValue(char* szFullIniFilePath, int val);
@@ -106,14 +107,34 @@ unsigned char addnoise(int sym, double amp, double gain,
 
 
 const char* FuncTable[] = {
-
     "SSE2",
     "SSSE3",
     "AVX",
     "AVX2",
-    "AVX512F"
+    "AVX512"
 };
 
+
+// This thread will be created at first with a stack-size of 64kB, which
+// simulates a low-stack condition and triggers an STACK_OVERFLOW exception.
+// Then it will be created with a standard stack-size and calls 'deconvolve'
+// with null-pointers to get an ACCESS_VIOLATION exception.
+// 
+// If all works as expected, this thread and the test-program will not die...
+
+DWORD WINAPI ExceptionTestThread(LPVOID dummy) {
+
+    printf(
+        "*** ExceptionTestThread ***\n"
+        "Calling 'decovolve'. Confirm the Messagebox...\n");
+
+    deconvolve(0, NULL, 0, NULL);
+
+    printf(
+        "Home again! All is fine.\n"
+        "*** ExceptionTestThread finished ***\n\n");
+    return 0;
+}
 
 
 int main(int argc, char* argv[]) {
@@ -130,6 +151,8 @@ int main(int argc, char* argv[]) {
     char szFullIniPath[260], szTmp[260];
     int iTestLoops = 10000;
     int iFrames = 5000;
+    int testExc = 1;
+    HANDLE hThread;
 
     QueryPerformanceFrequency(&qpf);
     dQpfPeriod = 1.0 / qpf.QuadPart;
@@ -142,6 +165,13 @@ int main(int argc, char* argv[]) {
        if (argv[i][0] == '/' || argv[i][0] == '-') {
            switch (argv[i][1]) {
 
+
+           case 'n': // disable the test of the exception-handler
+           case 'N':
+               if (tolower(argv[i][2]) == 'o')
+                   if (tolower(argv[i][3]) == 't')
+                       testExc = 0;
+               break;
            case 't':
            case 'T':
                j = abs(atoi(argv[i] + 3));
@@ -192,11 +222,12 @@ int main(int argc, char* argv[]) {
         goto NoProc;
     }
 
-    TouchStack = (TOUCHSTACK)GetProcAddress(hViterbi, "TouchStack");
-    if (!TouchStack) {
-        printf("Entrypoint 'TouchStack' not found. Wrong DLL?\n");
+    RScheckSuperframe = (RSCHECKSUP)GetProcAddress(hViterbi, "RScheckSuperframe");
+    if (!RScheckSuperframe) {
+        printf("Entrypoint 'RScheckSuperframe' not found.\n");
         goto NoProc;
     }
+
 
 // Show the CPU-Info
     iCpuCaps = GetProcessorInfo();
@@ -247,9 +278,6 @@ int main(int argc, char* argv[]) {
         goto NoProc;
     }
 
-// We only have one thread in this test program and it calls "deconvolve",
-// so we must prepare the program's stack once.
-    TouchStack(0x14000); // 20 pages
 
 // Boost
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -258,6 +286,7 @@ int main(int argc, char* argv[]) {
 // Set the config-file to SSE2...
     SetIniFileValue(szFullIniPath, 0);
     initialize(); // ...and update the CPU-dispatcher inside of the DLL
+
     printf("\nTesting function \"%s\" (%s) from %s with %d calls...\n",
         szFnDeconvolve, FuncTable[0], szDllName, iTestLoops);
 
@@ -282,6 +311,7 @@ int main(int argc, char* argv[]) {
         }
 
         deconvolve(framebits, inputInts, 0, decodedBits);
+
         errcnt = 0;
 
         for (int i = 0; i < framebits / 8; i++) {
@@ -321,7 +351,7 @@ int main(int argc, char* argv[]) {
      
     printf("\n-------------------------------------------------------------------------------\n");
 
-// Now check the other versions from SSSE3 to AVX512F
+// Now check the other versions from SSSE3 to AVX5
 
 #if (1)
     for (iFnNum = 1; iFnNum < 5; iFnNum++) {
@@ -354,6 +384,7 @@ int main(int argc, char* argv[]) {
             }
 
             deconvolve(framebits, inputInts, 0, decodedBits);
+
             errcnt = 0;
 
             for (int i = 0; i < framebits / 8; i++) {
@@ -378,8 +409,10 @@ int main(int argc, char* argv[]) {
                 deconvolve(framebits, inputInts, 0, decodedBits);
 
             QueryPerformanceCounter(&start);
+
             for (tr = 0; tr < iTestLoops; tr++)
                 deconvolve(framebits, inputInts, 0, decodedBits);
+
             QueryPerformanceCounter(&finish);
 
             compval = finish.QuadPart - start.QuadPart;
@@ -400,12 +433,53 @@ int main(int argc, char* argv[]) {
     }
 
 // Updating the config-file
-        printf("\n\nUpdating \"%s\" to \"%s\".\n",
-            szFullIniPath, FuncTable[iBest]);
-        SetIniFileValue(szFullIniPath, iBest);
+    printf("\n\nUpdating \"%s\" to \"%s\".\n",
+        szFullIniPath, FuncTable[iBest]);
+    SetIniFileValue(szFullIniPath, iBest);
 #endif
 
 
+    printf("\n-------------------------------------------------------------------------------\n");
+
+    Sleep(2000);
+    if (testExc) {
+        if (IDYES == MessageBox(0, "Do you want to test the exception-handler?",
+            "viterbi benchmark", MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND)) {
+
+            printf(
+                "\n\nFinally checking the exception handler inside of viterbi.dll.\n"
+                "Forcing an STACK_OVERFLOW exception in a thread with small stack...\n\n");
+
+            hThread = CreateThread(NULL, 64 * 1024, ExceptionTestThread, 0, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+            WaitForSingleObject(hThread, INFINITE);
+            CloseHandle(hThread);
+
+            // After an exception was handled, the function 'deconvolve' is blocked and returns
+            // immediately...
+
+            deconvolve(0, NULL, 0, NULL); // nothing happens
+
+            // ...until someone calls initialize() again.
+
+            initialize();
+
+
+            printf(
+                "Forcing an ACCESS_VIOLATION exception in 'deconvolve'...\n\n");
+
+            hThread = CreateThread(NULL, 0, ExceptionTestThread, 0, 0, NULL);
+            WaitForSingleObject(hThread, INFINITE);
+            CloseHandle(hThread);
+
+
+            printf(
+                "Forcing an ACCESS_VIOLATION exception in 'RScheckSuperframe'...\n"
+                "Calling 'RScheckSuperframe'. Confirm the Messagebox...\n");
+
+            RScheckSuperframe(NULL, 0, 10, NULL);
+            printf("Home again! All is fine.\n");
+        }
+    }
     FREE(originalBits);
     FREE(decodedBits);
     FREE(inputInts);
@@ -513,8 +587,8 @@ int SetIniFileValue(char* szFullIniFilePath, int val) {
     if (val > 4) return -1;
 
     FILE* fini = fopen(szFullIniFilePath, "rb+");
-    if (fini) {
 
+    if (fini) {
         if (val >= 0)
             fib += char(val);
         else
@@ -533,8 +607,8 @@ int GetIniFileValue(char* szFullIniFilePath) {
     char fib = 0;
     int retVal = -2; // reval if file not found
     FILE* fini = fopen(szFullIniFilePath, "rb+");
-    if (fini) {
 
+    if (fini) {
         fread(&fib, 1, 1, fini);
         fclose(fini);
         if (fib >= '0' && fib < '5')
@@ -554,27 +628,23 @@ int popcount32(unsigned int v) {
 }
 
 // Determine parity of argument: 1 = odd, 0 = even
-static inline int parityb(unsigned char x)
-{
+static inline int parityb(unsigned char x) {
     __asm__ __volatile__("test %1,%1;setpo %0" : "=g"(x) : "r" (x));
     return x;
 }
 
 // Generate gaussian random double with specified mean and std_dev
-static inline double normal_rand(double mean, double std_dev)
-{
+static inline double normal_rand(double mean, double std_dev) {
     double fac, rsq, v1, v2;
     static double gset;
     static int iset;
 
-    if (iset)
-    {
+    if (iset) {
         iset = 0;
         return mean + std_dev * gset;
     }
 
-    do
-    {
+    do {
         v1 = 2.0 * (double)random() / RAND_MAX - 1;
         v2 = 2.0 * (double)random() / RAND_MAX - 1;
         rsq = v1 * v1 + v2 * v2;

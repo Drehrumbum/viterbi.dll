@@ -22,25 +22,13 @@
 * 
 * This file contains the code for setting up the DLL. 
 * 
-* (c) 2021-2023 Heiko Vogel <hevog@gmx.de>
+* (c) 2021-2024 Heiko Vogel <hevog@gmx.de>
 *
 */
 
-#undef UNICODE
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include "viterbi.h"
 
-const char
-szDllName[] = "viterbi",
-szExtDLL[] = ".dll",
-szExtTXT[] = ".txt",
-szSSE2Lut[] = "SSE2",
-szSSSE3[] = "SSSE3",
-//szSSE41[] = "SSE4.1",
-szAVX[] = "AVX",
-szAVX2[] = "AVX2",
-szAVX5[] = "AVX512";
+
+#include "viterbi.h"
 
 
 // extern decoder-functions in deconvolve.cpp or in the assembly-parts.
@@ -56,159 +44,164 @@ extern WAKEUPYMM* wakeUpYMMJumpTarget;
 // external CPU-check defines
 #include "getcpucaps.h"
 
-int  GetUserLocalAppDataFolder(char* szLocalAppDataPath);
-int  CreateUserLocalAppDataFolder(char* szLocalAppDataPath);
-void CreateIniFile(char* szLocalAppDataPath);
-int  ReadIniFile(char* szLocalAppDataPath, DispatcherCMD* dcmd);
+
+int  GetUserLocalAppDataBasePath(char* szLocalAppDataBasePath);
+int  GetSubFolder(char* szInoutBasePath, const char* szSubFolder);
+int  CreateSubFolder(char* szInoutBasePath, const char* szNewFolder);
+void CreateIniFile();
+int  GetIniFile(DispatcherCMD* dcmd);
 void SetupCpuDispatcher(DispatcherCMD* dcmd);
 void ScreenWriteXY(int xpos, int ypos, char* buffer);
 
-#include "inifiletext.h"
-
 
 void SetupDLL() {
-    char szAppDataPath[MAX_PATH];
-    int iPathStatus, retval = 0;
-    DispatcherCMD dcmd;
+    char temp[MAX_PATH];
+    int status;
 
-// setting the defaults
-    dcmd.ShowIRect = 1; // show the Info-Rectangle on screen
-    dcmd.InstruSet = 5; // invalid value, triggers automatic dispatching
+    pVDM->dcmd.ShowIRect = 1; // show the Info-Rectangle on screen
+    pVDM->dcmd.InstruSet = 5; // invalid value, triggers automatic dispatching
 
-    iPathStatus = GetUserLocalAppDataFolder(szAppDataPath);
-// 1: the path "...\AppData\Local\" exists
-// 2: the path "...\AppData\Local\viterbi\" exists
-    if (2 == iPathStatus)
-       retval = ReadIniFile(szAppDataPath, &dcmd);
-
-    SetupCpuDispatcher(&dcmd);
-
-// Try to create our directory and the config-file
-    if (!retval && iPathStatus) {
-        retval = 1; // reusing variable
-
-        if (1 == iPathStatus)
-            retval = CreateUserLocalAppDataFolder(szAppDataPath);
-
-        if (retval)
-            CreateIniFile(szAppDataPath);
-    }
-}
-
-// GetUserLocalAppDataFolderiPathStatus values:
-// 0 : env-variable not set, path too long or a file "viterbi" exists
-//     in the "...\AppData\Local\" directory for unknown reasons
-// 1 : the path "...\AppData\Local\" exists
-// 2 : the path "...\AppData\Local\viterbi\" exists
-int GetUserLocalAppDataFolder(char* szLocalAppDataPath) {
-    char tempbuf[MAX_PATH];
-    WIN32_FIND_DATA wfd;
-    HANDLE hSearch;
-    int PathLen, iPathStatus = 0; // assume error
-
-// If GetEnvironmentVariable() fails or if the current path is too long
-// for appending our directory and the filename ("\viterbi\viterbi.txt")
-// later, we'll better fail at this point.
-    PathLen = GetEnvironmentVariable("LOCALAPPDATA", tempbuf, MAX_PATH - 21);
-
-    if (!PathLen || PathLen >= MAX_PATH - 21) {
-        *szLocalAppDataPath = 0;
-        return iPathStatus;
+    if (!pVDM->haveAppDataBasePath) {
+        pVDM->haveAppDataBasePath =
+            GetUserLocalAppDataBasePath(pVDM->szLocalAppDataBasePath);
+        pVDM->cpuCaps = GetCPUCaps();
     }
 
-// Otherwise we returning at least the "AppData\Local" path, so our own
-// directory can be created later w/o asking for the path again.
-    lstrcpy(szLocalAppDataPath, tempbuf);
-    iPathStatus = 1;
+    if (pVDM->haveAppDataBasePath) {
 
-// Append our own directory-name to the path and search for it
-    wsprintf(tempbuf, "%s\\%s", szLocalAppDataPath, szDllName);
-    hSearch = FindFirstFile(tempbuf, &wfd);
-
-    if (INVALID_HANDLE_VALUE != hSearch) {
-// We have a match, but this can be a file. This is unlikely, but
-// who knows? Let's check it.
-
-        if (wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            // It's a directory...
-            lstrcpy(szLocalAppDataPath, tempbuf); // copy the path
-            iPathStatus = 2; // all is fine
-            SetFileAttributes(tempbuf, FILE_ATTRIBUTE_NORMAL);
+        if (!pVDM->haveVitConfig) {
+            wsprintf(pVDM->szVitFullConfigFileName, "%s\\%s\\%s%s",
+                pVDM->szLocalAppDataBasePath, szDllName, szDllName, szExtTXT);
+            pVDM->haveVitConfig = 1;
         }
-        FindClose(hSearch);
+
+        if (!GetIniFile(&pVDM->dcmd)) {
+            lstrcpyn(temp, pVDM->szLocalAppDataBasePath, MAX_PATH);
+            status = GetSubFolder(temp, szDllName);
+            if (!status)
+                CreateSubFolder(temp, szDllName);
+            CreateIniFile();
+        }
+        SetupCpuDispatcher(&pVDM->dcmd);
     }
-    return iPathStatus;
 }
 
-inline int CreateUserLocalAppDataFolder(char* szLocalAppDataPath) {
-    int retval = 0;
+__forceinline int GetUserLocalAppDataBasePath(char* szLocalAppDataBasePath) {
     char tempbuf[MAX_PATH];
-    wsprintf(tempbuf, "%s\\%s", szLocalAppDataPath, szDllName);
+    int PathLen, ret = 1; // assume success
 
-    if (CreateDirectory(tempbuf, NULL)) {
-        lstrcpy(szLocalAppDataPath, tempbuf);
-        retval++;
+    // If GetEnvironmentVariable() fails or if the current path is too long
+    // for appending our directory and the filename ("\viterbi\viterbi.txt")
+    // later, we'll better fail at this point.
+    PathLen = GetEnvironmentVariable("LOCALAPPDATA", tempbuf, MAX_PATH - 22);
+
+    if (!PathLen || PathLen >= MAX_PATH - 22) {
+        *szLocalAppDataBasePath = 0;
+        ret = 0;
     }
-    return retval;
+    else
+        lstrcpyn(szLocalAppDataBasePath, tempbuf, MAX_PATH);
+
+    return ret;
+}
+
+__forceinline int CheckPathExists(char* path) {
+    int ret = 0;
+
+    if (path[0] == 0)
+        return ret;
+
+    DWORD att = GetFileAttributes(path);
+
+    if (INVALID_FILE_ATTRIBUTES != att) {
+        if (att & FILE_ATTRIBUTE_DIRECTORY) {
+            ret++;
+        }
+    }
+    return ret;
+}
+
+__forceinline int GetSubFolder(char* szInoutPath, const char* szSubFolder) {
+    char buff[MAX_PATH];
+    int ret = 0;
+
+    wsprintf(buff, "%s\\%s", szInoutPath, szSubFolder);
+    if (CheckPathExists(buff)) {
+        lstrcpyn(szInoutPath, buff, MAX_PATH); // return the existing path
+        ret++;
+    }
+    return ret;
+}
+
+__forceinline int CreateSubFolder(char* szInoutPath, const char* szNewFolder) {
+    int ret = 0;
+    char buff[MAX_PATH];
+    wsprintf(buff, "%s\\%s", szInoutPath, szNewFolder);
+
+    if (CreateDirectory(buff, NULL)) {
+        lstrcpyn(szInoutPath, buff, MAX_PATH);
+        ret++;
+    }
+    return ret;
 }
 
 // Try to create the config-file. Normally this shouldn't
-// go wrong. If so, there is nothing we can do and the
-// automatic comes into play again (file not found -> auto).
-inline void CreateIniFile(char* szLocalAppDataPath) {
-    char tempbuf[MAX_PATH];
-    DWORD NumBytesWritten;
-    wsprintf(tempbuf, "%s\\%s%s", szLocalAppDataPath, szDllName,
-        szExtTXT);
-
-    HANDLE hIni = CreateFile(tempbuf, GENERIC_WRITE,
+// go wrong. If so, there is nothing we can do at the moment
+// and the automatic comes into play again (file not found -> auto).
+#include "inifiletext.h"
+__forceinline void CreateIniFile() {
+    DWORD dwNumBytesWritten;
+    HANDLE hIni = CreateFile(pVDM->szVitFullConfigFileName, GENERIC_WRITE,
         0, 0, CREATE_ALWAYS, 0, 0);
 
     if (INVALID_HANDLE_VALUE != hIni) {
         WriteFile(hIni, szIniFileText, lstrlen(szIniFileText),
-            &NumBytesWritten, NULL);
+            &dwNumBytesWritten, NULL);
         CloseHandle(hIni);
     }
 }
 
-// Try to read the first three bytes of "viterbi.txt" and update "dcmd",
-// if possible. We'll get something like this: "x:x"
-inline int ReadIniFile(char* szLocalAppDataPath, DispatcherCMD* dcmd) {
-    char tempbuf[MAX_PATH];
-    unsigned char chFileInput[4]{};
-    DWORD dNumBytesRead;
+__forceinline int ReadConfigFile(void* buffer, int bytesToRead) {
+    int ret = 0;
     HANDLE hIn;
-    int retval = 0;
+    DWORD dwNumBytesRead;
 
-    wsprintf(tempbuf, "%s\\%s%s", szLocalAppDataPath, szDllName, szExtTXT);
-    hIn = CreateFile(tempbuf, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+    hIn = CreateFile(pVDM->szVitFullConfigFileName, GENERIC_READ,
+        0, 0, OPEN_EXISTING, 0, 0);
 
     if (INVALID_HANDLE_VALUE != hIn) {
-        ReadFile(hIn, &chFileInput, 3, &dNumBytesRead, NULL);
+        ReadFile(hIn, buffer, bytesToRead, &dwNumBytesRead, 0);
         CloseHandle(hIn);
-        retval = 1;
-// Check if we got data and if they are valid. If not, do nothing (using the
-// defaults).
-        if (3 == dNumBytesRead) {
-
-            if (chFileInput[0] >= '0' && chFileInput[0] < '5')
-                dcmd->InstruSet = chFileInput[0] - '0';   // 0 to 4
-            if (chFileInput[2] >= '0' && chFileInput[2] < '2')
-                dcmd->ShowIRect = (chFileInput[2] - '0'); // 0 or 1
-        }
+        if (dwNumBytesRead == bytesToRead)
+            ret++;
     }
-    return retval;
+    return ret;
 }
 
-inline void SetupCpuDispatcher(DispatcherCMD* dcmd) {
+// Try to read the first 3 bytes of "viterbi.txt" and update "dcmd",
+// if possible. We'll get something like this: "x:x"
+__forceinline int GetIniFile(DispatcherCMD* dcmd) {
+    unsigned char chFileInput[8]{};
+    int res = ReadConfigFile(chFileInput, 3);
+
+    if (res){
+        if (chFileInput[0] >= '0' && chFileInput[0] < '5')
+            dcmd->InstruSet = chFileInput[0] - '0';     // 0 to 4
+        if (chFileInput[2] == '0') dcmd->ShowIRect = 0; // 0 or 1
+    }
+    return res;
+}
+
+__forceinline void SetupCpuDispatcher(DispatcherCMD* dcmd) {
     char szMessageText[64];
     int iCPUCaps;
 
     wsprintf(szMessageText, "%s%s: ", szDllName, szExtDLL);
 
-    iCPUCaps = GetCPUCaps();
+    iCPUCaps = pVDM->cpuCaps;
 
- // Set the highest possible instruction set (automatic)
+// Set the highest possible instruction set (automatic)
+// iSelect will always be in the range from 0 to 4.
     int iSelect = 0; // assume SSE2
 
     if (iCPUCaps & CpuHasSSSE3) iSelect = 1;
@@ -220,15 +213,17 @@ inline void SetupCpuDispatcher(DispatcherCMD* dcmd) {
     if (iCPUCaps & CpuHasAVX2)  iSelect = 3;
     if (iCPUCaps & CpuHasAVX5)  iSelect = 4;
 
- // Now set the user-requested instruction set.
- // Selecting a *lower* instruction-set is allowed, of course.
+// Now try to set the user-requested instruction set.
+// Selecting a *lower* (supported) instruction-set is allowed,
+// of course.
 
     switch (dcmd->InstruSet) {
-
+    case 0:
+        iSelect = 0;
+        break;
     case 1:
         if (iCPUCaps & CpuHasSSSE3) iSelect = 1;
         break;
-
     case 2:
         if (iCPUCaps & CpuHasAVX1) iSelect = 2;
         break;
@@ -238,12 +233,10 @@ inline void SetupCpuDispatcher(DispatcherCMD* dcmd) {
     case 4:
         if (iCPUCaps & CpuHasAVX5) iSelect = 4;
         break;
-    default:
-        iSelect = 0;
-        break;
     }
 
-    // Updating the jump-target
+// Finally we select the jump-target according
+// to the value of iSelect.
     switch (iSelect) {
 
     case 1:
@@ -267,14 +260,13 @@ inline void SetupCpuDispatcher(DispatcherCMD* dcmd) {
         break;
 
     default:
-        lstrcat(szMessageText, szSSE2Lut);
+        lstrcat(szMessageText, szSSE2);
         deconJumpTarget = decon_sse2_lut32;
         break;
     }
 
     if (dcmd->ShowIRect)
-        ScreenWriteXY(10, 10, szMessageText);
-
+        ScreenWriteXY(5, 5, szMessageText);
 }
 
 // I know, writing directly on the screen is bad... You can disable it

@@ -7,8 +7,11 @@ comment!#######################################################################
 #  Slightly modified assembly-language version based on the compiler's output #
 #  This version uses a lookup-table with 256 pre-calculated 32-bit integers.  #
 #                                                                             #
+#  2024-07-24:                                                                #
+#  Replacing the MOV instructions for reading the symbols with MOVZX to       #
+#  prevent QIRX from crashing under very rare conditions. (Symbols > 0xFF)    #
 #                                                                             #
-#  (c) 2022-23 Heiko Vogel <hevog@gmx.de>                                     #
+#  (c) 2022-24 Heiko Vogel <hevog@gmx.de>                                     #
 #                                                                             #
 ##############################################################################!
 
@@ -20,16 +23,17 @@ include chainback.inc
 
 extern symbols32LUT : ptr dword 
 
-hevo segment align(64) 'CODE'
+
+_TEXT$sse2 segment align(64)
 ShadowSpace = 0
 LocalSpace = DECISIONS_ARRAY_SIZE
 UseVex = 0 
-NumLongOps = 8
-align 64
+NumLongOps = 2
+
 decon_sse2_lut32 proc frame
     SaveRegs xmm6, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12, xmm13,\
              xmm14, xmm15, rdi, rsi, rbx, rbp
-    
+
     mov         rbp,   symbols32LUT
     mov         r10d,  ecx  ; save framebits
     xor         eax,   eax
@@ -49,16 +53,16 @@ mainloop:
     sub         ecx,  1
     js          chainback
 
-    mov         ebx,   dword ptr [rdx + 2 * rax]
-    mov         edi,   dword ptr [rdx + 2 * rax + 4]
+    movzx       ebx,   byte ptr  [rdx + 2 * rax]
+    movzx       edi,   byte ptr  [rdx + 2 * rax + 4]
     movd        xmm3,  dword ptr [rbp + 4 * rbx]
     movd        xmm15, dword ptr [rbp + 4 * rdi]
     pshufd      xmm3,  xmm3,  0
     pshufd      xmm15, xmm15, 0 
-    mov         esi,   dword ptr [rdx + 2 * rax + 8]
+    movzx       esi,   byte ptr [rdx + 2 * rax + 8]
     movdqa      xmm0,  xmm3
     movd        xmm6,  dword ptr [rbp + 4 * rsi]
-    mov         r11d,  dword ptr [rdx + 2 * rax + 12]
+    movzx       r11d,  byte ptr [rdx + 2 * rax + 12]
     pshufd      xmm6,  xmm6,  0
     movd        xmm4,  dword ptr [rbp + 4 * r11]
     pxor        xmm15, xmm8
@@ -85,7 +89,7 @@ mainloop:
     pminub      xmm7,  xmm14
 
 ; give a little bit time between the reads (if possible)
-    mov         ebx,   dword ptr [rdx + 2 * rax + 24] ;6
+    movzx       ebx,   byte ptr [rdx + 2 * rax + 24] ;6
     pavgb       xmm4,  xmm6
     pminub      xmm0,  xmm1
     pcmpeqb     xmm14, xmm7
@@ -101,7 +105,7 @@ mainloop:
     psrlw       xmm4,  2
     movdqa      xmm3,  xmm5
     pand        xmm4,  xmm12
-    mov         ebx,   dword ptr [rdx + 2 * rax + 20] ;5
+    movzx       ebx,   byte ptr [rdx + 2 * rax + 20] ;5
     movdqa      xmm6,  xmm13
     psubusb     xmm2,  xmm4
     paddusb     xmm3,  xmm2
@@ -114,7 +118,7 @@ mainloop:
     pcmpeqb     xmm3,  xmm6
     pminub      xmm2,  xmm4
     movdqa      xmm5,  xmm3
-    mov         ebx,   dword ptr [rdx + 2 * rax + 16] ;4
+    movzx       ebx,   byte ptr [rdx + 2 * rax + 16] ;4
     pcmpeqb     xmm4,  xmm2
     movdqa      xmm15, xmm7
     punpcklbw   xmm5,  xmm4
@@ -123,7 +127,7 @@ mainloop:
     movd        xmm5,  dword ptr [rbp + 4 * rbx] ;4
     punpckhbw   xmm3,  xmm4
     pmovmskb    r11d,  xmm3
-    mov         ebx,   dword ptr [rdx + 2 * rax + 28] ;7
+    movzx       ebx,   byte ptr [rdx + 2 * rax + 28] ;7
     punpckhbw   xmm15, xmm0
     movdqa      xmm4,  xmm6
     punpckhbw   xmm6,  xmm2 
@@ -146,12 +150,10 @@ mainloop:
     pxor        xmm2,  xmm11
     psrlw       xmm7,  2
     pavgb       xmm2,  xmm14
-
     mov         [rsp + rax    ], r8d
     mov         [rsp + rax + 2], edi
     mov         [rsp + rax + 4], esi
     mov         [rsp + rax + 6], r11d
-
     pand        xmm7,  xmm12
     movdqa      xmm0,  xmm12 
     add         eax,   16
@@ -213,10 +215,10 @@ mainloop:
     jmp         mainloop
 
     Chainback_mac
-    RestoreRegs
     xor eax, eax
+    RestoreRegs
     ret
 
 decon_sse2_lut32 endp
-hevo ends
+_TEXT$sse2 ends
 end

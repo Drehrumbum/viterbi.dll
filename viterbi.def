@@ -6,7 +6,6 @@ EXPORTS
      RScheckSuperframe
      GetCPUCaps
      WakeUpYMM
-     TouchStack
 
 ; -- direct exports only for testing
 ; -- SSE2 --

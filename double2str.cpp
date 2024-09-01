@@ -27,7 +27,7 @@
 *
 * double2str converts a double to a zero-terminated string with the
 * wanted min-width and precision and returns a pointer to the beginning
-* of the sting. The given buffer must have a size of at least 32 bytes.
+* of the string. The given buffer must have a size of at least 32 bytes.
 * The function is good enough for the things we want to do with it and
 * was inspired from
 * https://stackoverflow.com/questions/23191203/convert-float-to-string-without-sprintf
@@ -42,13 +42,9 @@
 */
 
 
-
-#define WIN32_LEAN_AND_MEAN
-#undef UNICODE
-#include <windows.h>
 #include "viterbi.h"
-#ifdef VIT_WRITE_LOGFILE
-extern "C" int _fltused = 0; // fool the linker
+
+//extern "C" int _fltused = 0; // fool the linker
 
 char* double2str(double x, int widthPrec, char* buffer) {
 
@@ -101,4 +97,3 @@ char* double2str(double x, int widthPrec, char* buffer) {
 
     return buffer;
 }
-#endif

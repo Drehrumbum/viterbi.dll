@@ -1,0 +1,11 @@
+; We need a little library with two exports from NTDLL.DLL.
+; Create the library with
+;
+; lib /def:ntdll.def /out:ntdll.lib /machine:X64
+;
+; from the dev-console. Add the library to the command-line for
+; the linker.
+
+EXPORTS
+__chkstk
+_fltused

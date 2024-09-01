@@ -18,11 +18,15 @@ comment!#######################################################################
 #                                                                             #
 # 'NV' means 'non volatile'.                                                  #
 #                                                                             #
-# (c) 2022/23 Heiko Vogel <hevog@gmx.de>                                      #
+#  2024-04-01: Calling __chkstk() if locals > 0x1000                          #
+#                                                                             #
+# (c) 2022/24 Heiko Vogel <hevog@gmx.de>                                      #
 ##############################################################################!
 
 ;; DS prefix-opcode for alignment-purposes.
 dspre textequ <db 3eh>
+
+extrn   __chkstk : PROTO
 
 
 ;; init some globals
@@ -133,7 +137,13 @@ NumLOP = 0           ;; Number of long op-codes
     else
         StackMovement = StackAlignment + NumXMM * 16 + LocalSpace + ShadowSpace
         if StackMovement ne 0
-            sub rsp, StackMovement
+            if StackMovement gt 01000h
+                mov eax, StackMovement
+                call __chkstk
+                sub rsp, rax
+            else
+                sub rsp, StackMovement
+            endif
             .allocstack StackMovement
         endif
     endif
@@ -205,12 +215,12 @@ Displacement = ShadowSpace + LocalSpace
      ifnb XMMSaved
         if UseVex eq 0
             %for reg, XMMSaved
-                movdqa  reg, xmmword ptr [rsp + Displacement]
+                movaps  reg, xmmword ptr [rsp + Displacement]
                 Displacement = Displacement + 16
             endm
         else
             %for reg, XMMSaved    
-                vmovdqa  reg, xmmword ptr [rsp + Displacement]
+                vmovaps  reg, xmmword ptr [rsp + Displacement]
                 Displacement = Displacement + 16
             endm
         endif

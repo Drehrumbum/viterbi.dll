@@ -30,20 +30,20 @@
 * http://www.ka9q.net/code/fec/ or at Github.
 *
 *
-* (c) 2021-23 Heiko Vogel <hevog@gmx.de>
+* (c) 2021-24 Heiko Vogel <hevog@gmx.de>
 *
 */
 
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <intrin.h>
 #include "viterbi.h"
+#include <intrin.h>
+
+
+extern "C" __m128i m128_RS_const_lam;
+extern "C" __m128i m128_RS_const_b;
 
 #define PAD 135
 extern RS_LookUp* rsLUT;
-
-
 
 // Replacement for x % 255 calculations.
 // The remainder is valid for 0 <= x < 66299
@@ -69,7 +69,7 @@ int RScheckSuperframe(unsigned char* p, int startIx,
     UNREFERENCED_PARAMETER(startIx); // not needed, it's always zero
     long long j, k, l;
     int result, errors = 0;
-    align(64) unsigned int rsBlock[128];
+    ALIGN(64) unsigned int rsBlock[128];
 
     for (j = 0; j < RSDims; j++) {
         for (k = 0, l = 0; k < 120; k++, l += RSDims)
@@ -114,7 +114,7 @@ int RScheckSuperframe(unsigned char* p, int startIx,
 
     long long j, k, l;
     int result, errors = 0;
-    align(64) unsigned int rsBlock[128];
+    ALIGN(64) unsigned int rsBlock[128];
 
     rsEntry++;
     GetSystemTimePreciseAsFileTime(&fte);
@@ -185,26 +185,32 @@ out:
 }
 #endif // !VIT_WRITE_LOGFILE
 
+const __m128i m128_RS_b = _mm_setr_epi8(
+    0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
 
+const __m128i m128_RS_lamb = _mm_setr_epi8(
+    1, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0);
 
 // The arrays 't', 'reg', 'loc' and 'omega' from the original sources
 // have been removed. The remaining arrays are reused instead.
 __attribute__((target("sse2")))
 __forceinline int DECODE_RS(unsigned int* data, unsigned char* ato_mod,
     unsigned char* index_of) {
-    align(16) unsigned char root[16];
-    align(16) unsigned char lambda[16];
-    align(16) unsigned char s[16];
-    align(16) unsigned char b[16];
+    ALIGN(16) unsigned char root[16];
+    ALIGN(16) unsigned char lambda[16];
+    ALIGN(16) unsigned char s[16];
+    ALIGN(16) unsigned char b[16];
     unsigned int q, tmp, num1, num2, den, discr_r;
     int el, deg_lambda, deg_omega, syn_error, count, r, i, j;
 
+
+
     *(__m128i*)s = _mm_set1_epi8(data[0]);
 
-    for (j = 1; j < c_nn - PAD; j++)
-    {
-        for (i = 0; i < c_nroots; i++)
-        {
+    for (j = 1; j < c_nn - PAD; j++) {
+        for (i = 0; i < c_nroots; i++) {
             if (s[i] == 0)
                 s[i] = data[j];
             else
@@ -221,15 +227,13 @@ __forceinline int DECODE_RS(unsigned int* data, unsigned char* ato_mod,
     // if syndrome is zero, data[] is a codeword and there are no
     // errors to correct. So return data[] unmodified
     if (!syn_error)
-        return 0;
+       return 0;
 
-    for (i = 0; i < c_nroots; i++)
+    for (i = 0; i <= c_nroots; i++)
         s[i] = index_of[s[i]];
 
-    *(__m128i*)b = _mm_cmpeq_epi16(*(__m128i*)s, *(__m128i*)s); // all bits set
-    *(__m128i*)lambda = _mm_setzero_si128();
-    b[0] = 0;
-    lambda[0] = 1;
+    *(__m128i*)b = m128_RS_b;
+    *(__m128i*)lambda = m128_RS_lamb;
 
     // Begin Berlekamp-Massey algorithm to determine error+erasure
     // locator polynomial

@@ -18,12 +18,11 @@ include chainback.inc
 
 
 
-hevo segment align(64) 'CODE'
+_TEXT$ssse3 segment align(64)
 ShadowSpace = 0
 LocalSpace = DECISIONS_ARRAY_SIZE
 UseVex = 0
-NumLongOps = 4
-align 64
+NumLongOps = 5
 
 decon_ssse3 proc frame
 
@@ -31,11 +30,11 @@ decon_ssse3 proc frame
              xmm14, xmm15, rsi, rdi
 
     mov         r10d,  ecx
-    mov         rax,   0 ; long ops for alignment
-    add         rcx,   6
+    xor         eax,   eax
+    add         ecx,   6
     movdqa      xmm14, m128_63_0
     movdqa      xmm13, m128_63
-    shr         rcx,   1
+    shr         ecx,   1
     movdqa      xmm11, m128_1st_XOR_0_3_4_7
     movdqa      xmm10, m128_2nd_XOR_0_3_4_7
     movdqa      xmm8,  m128_XOR_1_5
@@ -44,6 +43,7 @@ decon_ssse3 proc frame
     movdqa      xmm15, xmm13
     movdqa      xmm6,  xmm13
     movdqa      xmm7,  xmm13
+
 
 mainloop:
     sub         ecx,  1
@@ -203,10 +203,10 @@ mainloop:
     jmp         mainloop
 
     Chainback_mac
+    xor eax, eax
     RestoreRegs
-    xor         eax, eax
     ret
 
 decon_ssse3 endp
-hevo ends
+_TEXT$ssse3 ends
 end

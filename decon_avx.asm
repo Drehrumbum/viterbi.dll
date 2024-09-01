@@ -9,23 +9,22 @@ comment!#######################################################################
 #  metrics are held in the registers during the mainloop.                     #
 #                                                                             #
 #                                                                             #
-#  (c) 2022-23 Heiko Vogel <hevog@gmx.de>                                     #
+#  (c) 2022-24 Heiko Vogel <hevog@gmx.de>                                     #
 #                                                                             #
 ##############################################################################!
 
-.nolist
+.nolist 
 include const.inc
 include sehmac.inc
 include chainback.inc
-.list
+.list   
 
 
-hevo segment align(64) 'CODE'
+_TEXT$avx segment align(64)
 ShadowSpace = 0
 LocalSpace = DECISIONS_ARRAY_SIZE
 UseVex = 1
-NumLongOps = 4
-align 64
+NumLongOps = 10
 
 decon_avx proc frame
 
@@ -45,8 +44,10 @@ decon_avx proc frame
     vmovdqa        xmm15, xmm13
     vmovdqa        xmm0,  xmm13
     vmovdqa        xmm14, xmm15
+    NOP_4
 
-
+   
+; loop aligned @ entry + 0xC0 
 mainloop:
     sub            ecx,  1
     js             chainback
@@ -127,7 +128,6 @@ mainloop:
     mov            dword ptr [rsp + rax + 2], r8d
     mov            dword ptr [rsp + rax + 4], esi
     mov            dword ptr [rsp + rax + 6], edi
-
     vpsubusb       xmm4, xmm13, xmm0
     vpaddusb       xmm7, xmm5, xmm0
     vpaddusb       xmm5, xmm5, xmm4
@@ -179,11 +179,12 @@ mainloop:
     vpsubusb       xmm2,  xmm2,  xmm13
     vpsubusb       xmm15, xmm15, xmm13
     jmp            mainloop
-
+    
     Chainback_mac
+    xor eax, eax
     RestoreRegs
-    xor            eax, eax
     ret
 decon_avx endp
-hevo ends
+_TEXT$avx ends
+
 end

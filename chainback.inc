@@ -17,8 +17,7 @@ comment!#######################################################################
 
 Chainback_mac macro
 align 16
-chainback:
-    sub     r10d, 1
+chainback:    sub     r10d, 1
     mov     rcx, 0 
     lea     rsi, [rsp + 8*r10 + 48]
 

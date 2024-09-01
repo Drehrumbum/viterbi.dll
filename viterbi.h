@@ -19,12 +19,33 @@
 * Place - Suite 330, Boston, MA 02111-1307, USA
 * and it is distributed under the GNU General Public License (GPL).
 *
-* (c) 2021-2023 Heiko Vogel <hevog@gmx.de>
+* (c) 2021-2024 Heiko Vogel <hevog@gmx.de>
 * 
 */
 
-#define ALIGN(a) __declspec(align(a))
-#define align(a) ALIGN(a)
+#undef UNICODE
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <psapi.h>
+
+
+#define ALIGN(a)  __declspec(align(a))
+#define VCALLOC(size) VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#define VFREE(x) VirtualFree(x, 0, MEM_RELEASE);
+
+
+
+
+inline const char
+szDllName[]       = "viterbi",
+szExtDLL[]        = ".dll",
+szExtTXT[]        = ".txt",
+szSSE2[]          = "SSE2",
+szSSSE3[]         = "SSSE3",
+szAVX[]           = "AVX",
+szAVX2[]          = "AVX2",
+szAVX5[]          = "AVX512 (256 bit)";
+
 
 // If VIT_WRITE_LOGFILE is defined, the DLL will be compiled with code
 // that writes a lot of information about the viterbi-decoder and the
@@ -34,8 +55,13 @@
 //           ...\APPDATA\LOCAL\viterbi\YYYYMMDD_HHMMSS.log
 // and its size increases at a rate of approximately 65 MB/hr, so don't
 // forget to swap this build of the DLL back to the production DLL after 
-// your investigations.
+// your investigations. The logging-feature requires at least Windows 8
+// because of the GetsytemTimePreciceAsFlieTime() function used.
 //#define VIT_WRITE_LOGFILE
+
+
+// Includes all exceptions
+//#define VIT_INCLUDE_EXCEPTIONS
 
 // Includes information about the creation and termination of threads.
 //#define VIT_INCLUDE_THREAD_ATTACH_DETACH
@@ -48,6 +74,9 @@
 // This creates a second file in which the symbols for the viterbi-decoder
 // are stored in binary form (char). The file name is the same like above
 // but has the extension *.sym. This file grows real fast!
+// 
+// NOTE: Currently the 32-bit sized symbols will be written directly to the
+// log file. See deconvolve.cpp, lines 617++
 //#define VIT_WRITE_SYMBOLS
 
 
@@ -76,9 +105,26 @@ struct RS_LookUp {
 };
 
 struct DispatcherCMD {
-    int InstruSet;  // wanted instruction-set (0-4)
+    int InstruSet;  // wanted instruction-set (0-3)
     int ShowIRect;  // show info-rect on screen (0 or 1)
 };
 
+
 typedef int DECON (unsigned int, unsigned int*, int, unsigned char*);
 typedef void WAKEUPYMM();
+
+
+struct VITDLLMEM {
+    DWORD64 dllBaseAddress; // The DLL's place in QIRX's address-space
+    DWORD64 dllEndAddress;  // needed for exception handling
+    PVOID hExHandler; 
+    int  exceptCounter;
+    int  cpuCaps;
+    int  haveAppDataBasePath;
+    int  haveVitConfig;
+    DispatcherCMD dcmd;
+    char szLocalAppDataBasePath[MAX_PATH];
+    char szVitFullConfigFileName[MAX_PATH];
+};
+inline VITDLLMEM* pVDM;
+
